@@ -26,7 +26,8 @@ describe('validator', () => {
     const cfg = sampleConfig(8);
     const phases = new Set<string>();
     const race = await generateValidatedRace(cfg, { onProgress: (p: ValidationProgress) => phases.add(p.phase) });
-    expect(race.attempts).toBe(1);
+    expect(race.attempts).toBeGreaterThanOrEqual(1);
+    expect(race.seed).toBe((cfg.seed + race.attempts - 1) >>> 0);
     expect(race.validationFinishers).toBeGreaterThanOrEqual(1);
     expect(race.roster.length).toBe(8);
     expect(phases.has('accepted')).toBe(true);

@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#0d1017" />
+    <title>Carrera de Canicas</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%23e6194b'/%3E%3Ccircle cx='11' cy='10' r='4' fill='%23fff' fill-opacity='.6'/%3E%3C/svg%3E" />
+  </head>
+  <body>
+    <div id="app">
+      <aside id="panel">
+        <header class="panel-head">
+          <h1><span class="logo"></span>Carrera de Canicas</h1>
+          <button id="btn-close-panel" class="btn icon only-mobile" type="button" aria-label="Cerrar">✕</button>
+        </header>
+        <div id="config-sections" class="panel-scroll"></div>
+        <footer class="panel-foot">
+          <button id="btn-generate" class="btn primary big" type="button">🎲 Generar mapa</button>
+          <button id="btn-reset" class="btn" type="button">Restablecer valores</button>
+        </footer>
+      </aside>
+
+      <main id="stage">
+        <canvas id="game"></canvas>
+        <canvas id="minimap"></canvas>
+
+        <button id="btn-open-panel" class="btn icon only-mobile" type="button" aria-label="Configuración">⚙</button>
+
+        <!-- Idle -->
+        <section id="welcome" class="overlay center show">
+          <div class="card">
+            <h2>Carreras de canicas</h2>
+            <p class="muted">Ajusta las opciones y genera un mapa aleatorio validado: el juego comprueba que al menos una canica llegue a la meta antes de mostrártelo.</p>
+            <button id="btn-generate-2" class="btn primary big" type="button">🎲 Generar mapa</button>
+          </div>
+        </section>
+
+        <!-- Generating -->
+        <section id="progress" class="overlay center">
+          <div class="card">
+            <div class="spinner"></div>
+            <h2>Generando mapa…</h2>
+            <p id="progress-line" class="progress-line">Preparando…</p>
+            <div class="bar"><div id="progress-bar"></div></div>
+            <ul id="progress-log" class="log"></ul>
+            <button id="btn-cancel" class="btn" type="button">Cancelar</button>
+          </div>
+        </section>
+
+        <!-- Error -->
+        <section id="error" class="overlay center">
+          <div class="card">
+            <h2>No se pudo generar el mapa</h2>
+            <p id="error-msg" class="muted"></p>
+            <ul id="error-log" class="log"></ul>
+            <div class="btn-row">
+              <button id="btn-error-retry" class="btn primary" type="button">Reintentar con otra semilla</button>
+              <button id="btn-error-config" class="btn" type="button">Configurar</button>
+            </div>
+          </div>
+        </section>
+
+        <!-- Preview -->
+        <section id="preview-bar" class="bar-overlay">
+          <div id="preview-info" class="preview-info"></div>
+          <div class="btn-row">
+            <button id="btn-start" class="btn primary big" type="button">▶ Iniciar carrera</button>
+            <button id="btn-other" class="btn" type="button">🎲 Otro mapa</button>
+            <button id="btn-fit" class="btn" type="button">Ajustar vista</button>
+          </div>
+        </section>
+
+        <!-- Race HUD -->
+        <section id="hud" class="hud">
+          <div class="hud-top">
+            <div class="stat"><small>Tiempo</small><b id="hud-time">0:00.0</b></div>
+            <div class="stat"><small>En carrera</small><b id="hud-racing">0</b></div>
+            <div class="stat"><small>Llegadas</small><b id="hud-finished">0</b></div>
+            <div class="stat"><small>Eliminadas</small><b id="hud-elim">0</b></div>
+          </div>
+          <div id="hud-chips" class="chips"></div>
+          <div id="leaderboard" class="leaderboard">
+            <div class="lb-head"><span>Clasificación</span><button id="btn-lb" class="btn icon small" type="button" aria-label="Mostrar u ocultar">▾</button></div>
+            <div id="leaderboard-rows"></div>
+          </div>
+          <div id="toasts" class="toasts"></div>
+          <div id="countdown" class="countdown"></div>
+          <div class="controls">
+            <button id="btn-pause" class="btn icon" type="button" title="Pausa (espacio)">❚❚</button>
+            <div id="speeds" class="seg"></div>
+            <button id="btn-names" class="btn icon" type="button" title="Nombres de los primeros">🏷</button>
+            <button id="btn-restart" class="btn" type="button">↺<span class="lbl"> Reiniciar</span></button>
+            <button id="btn-new" class="btn" type="button">🗺️<span class="lbl"> Nuevo mapa</span></button>
+          </div>
+        </section>
+
+        <section id="podium" class="overlay center"></section>
+      </main>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
