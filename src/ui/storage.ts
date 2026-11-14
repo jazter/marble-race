@@ -1,4 +1,5 @@
 import { defaultConfig, type GameConfig } from '../core/config';
+import { defaultAudioSettings, type AudioSettings } from '../audio/music';
 
 const KEY = 'marble-race.config.v1';
 
@@ -37,6 +38,31 @@ export function saveConfig(cfg: GameConfig): void {
 export function clearSavedConfig(): void {
   try {
     localStorage.removeItem(KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
+const AUDIO_KEY = 'marble-race:audio';
+
+export function loadAudioSettings(): AudioSettings {
+  const s = defaultAudioSettings();
+  try {
+    const raw = localStorage.getItem(AUDIO_KEY);
+    if (raw) {
+      const o = JSON.parse(raw) as Partial<AudioSettings>;
+      if (typeof o.enabled === 'boolean') s.enabled = o.enabled;
+      if (typeof o.volume === 'number' && Number.isFinite(o.volume)) s.volume = Math.min(100, Math.max(0, Math.round(o.volume)));
+    }
+  } catch {
+    /* storage unavailable or corrupt: use defaults */
+  }
+  return s;
+}
+
+export function saveAudioSettings(s: AudioSettings): void {
+  try {
+    localStorage.setItem(AUDIO_KEY, JSON.stringify({ enabled: s.enabled, volume: s.volume }));
   } catch {
     /* ignore */
   }

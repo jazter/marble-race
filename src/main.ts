@@ -1,5 +1,8 @@
 import './style.css';
 import { SIM_DT, defaultConfig, type GameConfig } from './core/config';
+import { cumulativeLengths } from './core/math';
+import { MusicDirector } from './audio/director';
+import { MusicEngine } from './audio/music';
 import { sampleMap } from './core/fixtures';
 import { Renderer } from './render/renderer';
 import { createSimulation } from './sim';
@@ -9,7 +12,8 @@ import { ConfigPanel } from './ui/configPanel';
 import { $, el } from './ui/dom';
 import { Hud } from './ui/hud';
 import { hidePodium, showPodium } from './ui/podium';
-import { clearSavedConfig, loadConfig, saveConfig } from './ui/storage';
+import { initSoundControls } from './ui/sound';
+import { clearSavedConfig, loadAudioSettings, loadConfig, saveAudioSettings, saveConfig } from './ui/storage';
 
 type Mode = 'idle' | 'generating' | 'error' | 'preview' | 'race';
 
@@ -28,6 +32,10 @@ let acc = 0;
 let configDirty = false;
 let podiumTimer: number | undefined;
 let podiumShown = false;
+let director: MusicDirector | null = null;
+
+const music = new MusicEngine(loadAudioSettings());
+initSoundControls(music, saveAudioSettings);
 
 const canvas = $<HTMLCanvasElement>('game');
 const renderer = new Renderer(canvas, config, $<HTMLCanvasElement>('minimap'));
@@ -67,7 +75,11 @@ function setMode(m: Mode): void {
   $('error').classList.toggle('show', m === 'error');
   $('preview-bar').classList.toggle('show', m === 'preview');
   $('hud').classList.toggle('show', m === 'race');
-  if (m !== 'race') hidePodium();
+  if (m !== 'race') {
+    hidePodium();
+    director = null;
+    music.calm();
+  }
 }
 
 /* ------------------------------------------------------- generation */
@@ -156,6 +168,7 @@ function updatePreviewInfo(): void {
 function disposeRace(): void {
   window.clearTimeout(podiumTimer);
   podiumShown = false;
+  director = null;
   hud?.destroy();
   hud = null;
   sim?.destroy();
@@ -177,6 +190,9 @@ function startRace(): void {
   paused = false;
   acc = 0;
   $('btn-pause').textContent = '❚❚';
+  const cum = cumulativeLengths(race.map.path);
+  director = new MusicDirector(music, cum[cum.length - 1] ?? 0);
+  music.startCountdown();
   setMode('race');
 }
 
@@ -192,6 +208,7 @@ function togglePause(): void {
   if (mode !== 'race') return;
   paused = !paused;
   $('btn-pause').textContent = paused ? '▶' : '❚❚';
+  music.setPaused(paused);
 }
 $('btn-pause').addEventListener('click', togglePause);
 
@@ -258,6 +275,7 @@ function frame(now: number): void {
       sim.stepMany(steps);
     }
     const events = sim.drainEvents();
+    director?.update(sim, events);
     renderer.render(sim, paused ? 0 : dt, events);
     hud.update(sim, events);
     if (sim.isOver()) showResult();
