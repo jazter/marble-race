@@ -362,3 +362,17 @@ describe('simulation', () => {
     sim.destroy();
   });
 });
+
+describe('scroll camera', () => {
+  it('starts at the pack and never lets the leader escape below the view', () => {
+    const cfg = sampleConfig(12);
+    cfg.camera.mode = 'scroll';
+    cfg.camera.scrollSpeed = 0.5; // much slower than the marbles
+    cfg.camera.offscreenKill = true;
+    const sim = createSimulation(sampleMap(12), sampleRoster(12), cfg);
+    while (!sim.isOver() && sim.time < 120) sim.step();
+    // with a slow scroll the leader must survive (the camera follows it), so someone finishes
+    expect(sim.getResult().finishers.length).toBeGreaterThan(0);
+    sim.destroy();
+  });
+});

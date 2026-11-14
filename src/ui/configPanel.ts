@@ -177,7 +177,7 @@ export const SECTIONS: Section[] = [
       { kind: 'range', label: 'Ancho de vista', path: 'camera.viewWidth', min: 10, max: 80, step: 1, unit: ' m' },
       { kind: 'toggle', label: 'Eliminar canicas fuera de cámara', path: 'camera.offscreenKill' },
       { kind: 'range', label: 'Tiempo de gracia', path: 'camera.offscreenGrace', min: 0, max: 10, step: 0.5, unit: ' s', decimals: 1, enabledIf: (c) => c.camera.offscreenKill },
-      { kind: 'range', label: 'Velocidad de scroll', path: 'camera.scrollSpeed', min: 0.5, max: 12, step: 0.1, unit: ' m/s', decimals: 1, enabledIf: (c) => c.camera.mode === 'scroll' },
+      { kind: 'range', label: 'Velocidad de scroll', path: 'camera.scrollSpeed', min: 0.5, max: 6, step: 0.1, unit: ' m/s', decimals: 1, enabledIf: (c) => c.camera.mode === 'scroll' },
     ],
   },
   {

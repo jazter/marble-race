@@ -9,6 +9,7 @@ export class SimCamera {
   readonly state: CameraState;
   private target: Vec;
   private scrollS = 0;
+  private scrollStarted = false;
   private readonly k = 1 - Math.exp(-4 * SIM_DT);
 
   constructor(
@@ -40,7 +41,17 @@ export class SimCamera {
     if (started) {
       const mode = this.config.camera.mode;
       if (mode === 'scroll') {
+        // Chasing camera: advances at least at scrollSpeed, starting where the
+        // pack is, and never lets the leader escape past the lower part of the
+        // view (stragglers left above the view are the ones that get eliminated).
+        let leaderProgress = -Infinity;
+        for (const m of marbles) if (m.status === 'racing' && m.progress > leaderProgress) leaderProgress = m.progress;
+        if (!this.scrollStarted) {
+          this.scrollStarted = true;
+          this.scrollS = this.prog.project({ x: this.state.x, y: this.state.y }, -1, []);
+        }
         this.scrollS += this.config.camera.scrollSpeed * SIM_DT;
+        if (leaderProgress > -Infinity) this.scrollS = Math.max(this.scrollS, leaderProgress - this.state.height * 0.25);
         this.target = pointAtLength(this.map.path, this.prog.cum, this.scrollS);
       } else {
         // racing marbles sorted by progress (desc), ties by id (stable)

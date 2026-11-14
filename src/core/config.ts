@@ -210,7 +210,7 @@ export function defaultConfig(): GameConfig {
       viewWidth: 30,
       offscreenKill: false,
       offscreenGrace: 2,
-      scrollSpeed: 2.5,
+      scrollSpeed: 1.5,
     },
     race: {
       podiumSize: 3,
