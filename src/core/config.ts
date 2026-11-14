@@ -135,6 +135,9 @@ export interface GameConfig {
     width: number; // corridor width in metres
     difficulty: number; // 0..1
     maxAttempts: number; // validator: max seeds tried before giving up
+    /** Regroup points per map: funnels / circular chambers with a turning propeller
+     *  that holds marbles and lets them through a few at a time (0..4). */
+    regroups: number;
   };
 }
 
@@ -225,6 +228,7 @@ export function defaultConfig(): GameConfig {
       width: 16,
       difficulty: 0.5,
       maxAttempts: 25,
+      regroups: 2,
     },
   };
 }

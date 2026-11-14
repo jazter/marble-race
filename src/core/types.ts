@@ -184,4 +184,9 @@ export interface MarbleProfile {
   id: number; // 0..count-1, index into spawnPoints
   name: string; // Spanish display name, e.g. "Rubí", "Plata", "Arcoíris"
   skin: MarbleSkin;
+  /**
+   * Stable identity of this marble's look across races (same key => same skin),
+   * e.g. "solid-rubi". Used to remember the names spectators give to marbles.
+   */
+  key?: string;
 }
