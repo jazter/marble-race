@@ -52,6 +52,8 @@ Todas las opciones están en el panel lateral (⚙ en móvil). *Restablecer valo
 | Proporción de especiales | 25 % |
 | Rebote / lentitud / lanzamiento | 1.1 / 85 % / 12 m/s |
 
+> Con paredes exteriores en **Eliminar**, sólo 1 tramo con obstáculos (2 con dificultad ≥ 0.75) tiene paredes mortales; las rampas, la salida, los cambios de carril y la meta quedan protegidos. Si todas las paredes mataran, ninguna canica podría terminar un recorrido cerrado.
+
 **Objetos**
 
 | Opción | Por defecto |
@@ -77,7 +79,7 @@ Todas las opciones están en el panel lateral (⚙ en móvil). *Restablecer valo
 | Modo | Líder (también: pelotón, camino, scroll automático) |
 | Ancho de vista | 30 m |
 | Eliminar canicas fuera de cámara | No (si se activa, tiempo de gracia de 2 s) |
-| Velocidad de scroll | 2.5 m/s |
+| Velocidad de scroll | 1.5 m/s (la cámara avanza al menos a esta velocidad y nunca deja escapar al líder por abajo) |
 
 **Carrera**
 

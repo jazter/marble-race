@@ -128,6 +128,56 @@ function mechReach(m: Mechanism): number {
   return total;
 }
 
+/**
+ * Segments whose outer walls stay lethal with a 'kill' boundary. Ramp-based
+ * segments (zigzag, funnel, switch, pads), the start box, chicanes and the
+ * finish force marbles to roll along the sides, so with a 'kill' boundary they
+ * get protected solid walls; otherwise no marble could ever finish.
+ */
+const LETHAL_SIDE_SEGMENTS = new Set(['pegs', 'propellers', 'arms', 'saws', 'triangles', 'hammers']);
+/** Segments that throw marbles against the sides constantly (least preferred as lethal). */
+const BOUNCY_SEGMENTS = new Set(['pegs', 'hammers']);
+
+/**
+ * Emit the boundary chain as polyline walls of at most CH points. With
+ * `lethalRanges` (only for a 'kill' boundary) edges outside those canonical
+ * y-ranges become plain solid walls instead of boundary walls.
+ */
+function emitBoundary(ctx: Ctx, chain: Vec[], lethalRanges: [number, number][] | null): void {
+  const CH = 10;
+  const isLethal = (y: number): boolean => !lethalRanges || lethalRanges.some(([y0, y1]) => y > y0 + 1e-6 && y < y1 - 1e-6);
+  const edges: { a: Vec; b: Vec; lethal: boolean }[] = [];
+  for (let i = 0; i < chain.length - 1; i++) {
+    const a = chain[i];
+    const b = chain[i + 1];
+    const ts = [0, 1];
+    if (lethalRanges) {
+      for (const [y0, y1] of lethalRanges) {
+        for (const yc of [y0, y1]) if ((a.y - yc) * (b.y - yc) < 0) ts.push((yc - a.y) / (b.y - a.y));
+      }
+      ts.sort((p, q) => p - q);
+    }
+    for (let k = 0; k < ts.length - 1; k++) {
+      if (ts[k + 1] - ts[k] < 1e-9) continue;
+      const p = { x: a.x + (b.x - a.x) * ts[k], y: a.y + (b.y - a.y) * ts[k] };
+      const q = { x: a.x + (b.x - a.x) * ts[k + 1], y: a.y + (b.y - a.y) * ts[k + 1] };
+      edges.push({ a: p, b: q, lethal: isLethal((p.y + q.y) / 2) });
+    }
+  }
+  let i = 0;
+  while (i < edges.length) {
+    const lethal = edges[i].lethal;
+    const pts: Vec[] = [edges[i].a];
+    while (i < edges.length && edges[i].lethal === lethal && pts.length < CH) {
+      pts.push(edges[i].b);
+      i++;
+    }
+    const shape: StaticShape = { type: 'polyline', points: pts, thickness: BOUNDARY_THICK };
+    if (lethal) ctx.walls.push({ id: nid(ctx, 'b'), shape, reaction: 'solid', boundary: true, style: 'wall' });
+    else ctx.walls.push({ id: nid(ctx, 'b'), shape, reaction: 'solid', style: 'wall' });
+  }
+}
+
 export function generateMap(config: GameConfig, seed: number): MapDef {
   const rng = new Rng(seed);
   const ctx = makeCtx(config, rng);
@@ -137,13 +187,17 @@ export function generateMap(config: GameConfig, seed: number): MapDef {
   ctx.y += 0;
 
   let prev: string | null = null;
+  /** Canonical y-ranges of obstacle segments that may get lethal outer walls (walls.boundary === 'kill'). */
+  const lethalRanges: [number, number, number][] = [];
   const nSeg = Math.max(0, Math.floor(config.map.segments));
   for (let i = 0; i < nSeg; i++) {
     const def = pickSegment(ctx, prev, i === 0);
     marks.push({ type: def.type, idx: ctx.path.length - 1 });
     ctx.ramps = [];
+    const segStartY = ctx.y;
     def.run(ctx);
     if (!def.ownSwitch) maybeSwitch(ctx, false);
+    if (LETHAL_SIDE_SEGMENTS.has(def.type)) lethalRanges.push([segStartY, ctx.y, BOUNCY_SEGMENTS.has(def.type) ? 1 : 0]);
     prev = def.type;
     if (i < nSeg - 1 && rng.bool(0.5)) {
       let dx = rng.range(2, 4.5) * rng.sign();
@@ -159,18 +213,18 @@ export function generateMap(config: GameConfig, seed: number): MapDef {
   // boundary chain: left (down), floor, right (up), lid back to start
   const chain: Vec[] = [...ctx.left, ...[...ctx.right].reverse(), ctx.left[0]];
   void bottomY;
-  const CH = 10;
-  for (let i = 0; i < chain.length - 1; i += CH - 1) {
-    const pts = chain.slice(i, Math.min(chain.length, i + CH));
-    if (pts.length < 2) break;
-    ctx.walls.push({
-      id: nid(ctx, 'b'),
-      shape: { type: 'polyline', points: pts, thickness: BOUNDARY_THICK },
-      reaction: 'solid',
-      boundary: true,
-      style: 'wall',
-    });
+  let killRanges: [number, number][] | null = null;
+  if (config.walls.boundary === 'kill') {
+    // Only a few obstacle sections get lethal side walls ("lava" sections); more
+    // than that and no marble survives. Separate RNG keeps the rest of the map
+    // identical to the same seed with another boundary reaction.
+    const krng = new Rng((seed ^ 0x6b1d5a3f) >>> 0);
+    const k = Math.min(lethalRanges.length, config.map.difficulty >= 0.75 ? 2 : 1);
+    // pegs/hammers bounce marbles sideways all the time: use them last
+    const ordered = krng.shuffle([...lethalRanges]).sort((a, b) => a[2] - b[2]);
+    killRanges = ordered.slice(0, k).map(([y0, y1]) => [y0, y1] as [number, number]);
   }
+  emitBoundary(ctx, chain, killRanges);
 
   // segment info
   const cum = cumulativeLengths(ctx.path);

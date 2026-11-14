@@ -169,3 +169,23 @@ describe('generator', () => {
     expect(bottom - m.finish.a.y).toBeGreaterThan(60);
   });
 });
+
+describe('kill boundary', () => {
+  it('keeps most outer walls solid and only a few obstacle sections lethal', () => {
+    for (const seed of [1, 2, 3]) {
+      const solid = generateMap(defaultConfig(), seed);
+      const kill = generateMap(cfgWith((c) => (c.walls.boundary = 'kill')), seed);
+      // non-kill boundary: every outer-wall piece is a boundary wall
+      expect(solid.walls.filter((w) => /^b\d+$/.test(w.id) && !w.boundary).length).toBe(0);
+      const lethal = kill.walls.filter((w) => w.boundary);
+      const protectedPieces = kill.walls.filter((w) => /^b\d+$/.test(w.id) && !w.boundary && w.reaction === 'solid');
+      expect(protectedPieces.length).toBeGreaterThan(0);
+      if (kill.segments.some((s) => ['pegs', 'propellers', 'arms', 'saws', 'triangles', 'hammers'].includes(s.type))) {
+        expect(lethal.length).toBeGreaterThan(0);
+      }
+      // everything else about the map is unchanged
+      expect(kill.mechanisms).toEqual(solid.mechanisms);
+      expect(kill.path).toEqual(solid.path);
+    }
+  });
+});
