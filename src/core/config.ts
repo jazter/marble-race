@@ -53,6 +53,9 @@ export type MonsterKind =
   | 'fish' // swims across the course and catches the marble it meets
   | 'snake'; // slithers across the course at any angle and catches a marble
 
+/** Decorative scenery behind the course (visual only, never affects the race). */
+export type BackgroundKind = 'auto' | 'sea' | 'space' | 'clouds' | 'dinosaurs' | 'castle';
+
 export type SwitchActionType =
   | 'lowGravity'
   | 'highGravity'
@@ -134,6 +137,11 @@ export interface GameConfig {
     actions: Record<SwitchActionType, boolean>;
     frequency: number; // 0..1 how often a segment gets a switch
     duration: number; // seconds a timed switch effect lasts
+  };
+
+  display: {
+    /** Scenery drawn behind the course; 'auto' = the map's own plain theme. Visual only. */
+    background: BackgroundKind;
   };
 
   camera: {
@@ -243,6 +251,9 @@ export function defaultConfig(): GameConfig {
       },
       frequency: 0.35,
       duration: 6,
+    },
+    display: {
+      background: 'auto',
     },
     camera: {
       mode: 'leader',
