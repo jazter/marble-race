@@ -14,7 +14,7 @@ Controles durante la carrera:
 
 | Control | Acción |
 |---|---|
-| Velocidad 0.3× – 8× | Cambia la velocidad de la simulación (por defecto 0.6×; la cuenta atrás siempre va a 1×) |
+| Velocidad 0.3× – 8× | Cambia la velocidad de la simulación (por defecto 1×; la cuenta atrás siempre va a 1×) |
 | Pausa (barra espaciadora) | Pausa o reanuda |
 | ↺ Reiniciar | Repite exactamente la misma carrera (la simulación es determinista) |
 | 🗺️ Nuevo mapa | Genera otro mapa |

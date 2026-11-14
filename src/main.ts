@@ -22,7 +22,7 @@ import { clearSavedConfig, loadAudioSettings, loadConfig, saveAudioSettings, sav
 type Mode = 'idle' | 'generating' | 'error' | 'preview' | 'race';
 
 const SPEEDS = [0.3, 0.6, 1, 2, 4, 8];
-const DEFAULT_SPEED = 0.6;
+const DEFAULT_SPEED = 1;
 
 let config: GameConfig = loadConfig();
 let mode: Mode = 'idle';
