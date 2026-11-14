@@ -24,6 +24,13 @@ export interface MonsterHost {
 }
 
 const EPS = 1e-9;
+/** Spider silk drop speed (m/s, x monsters.speed): fast enough to reach rolling marbles. */
+const SPIDER_DROP_SPEED = 12;
+/** Fish / snake can swerve sideways off their lane toward a nearby marble. */
+const SWERVE = {
+  fish: { maxDev: 1.6, speed: 5, ahead: 3.5, side: 2.6 },
+  snake: { maxDev: 1.2, speed: 4, ahead: 3, side: 2.2 },
+} as const;
 
 abstract class Base<M extends Monster> {
   phase: MonsterPhase = 'idle';
@@ -172,7 +179,7 @@ class Spider extends Base<MonsterOf<'spider'>> {
         this.setPhase('returning');
         return;
       }
-      const step = 7 * S * dt;
+      const step = SPIDER_DROP_SPEED * S * dt;
       if (along > this.len) this.len = Math.min(along, this.len + step);
       else this.len = Math.max(along, this.len - step);
       if (this.len >= d.maxLength - EPS) {
@@ -383,6 +390,8 @@ class Crosser extends Base<Traveller> {
   private heldAt = 0;
   private caught = false;
   private ignore: number[] = [];
+  /** Sideways offset of the head from the lane (perpendicular to dir, metres). */
+  private off = 0;
 
   constructor(def: Traveller, h: MonsterHost) {
     super(def, h);
@@ -427,6 +436,7 @@ class Crosser extends Base<Traveller> {
     this.ignore = [];
     this.hx = this.from.x;
     this.hy = this.from.y;
+    this.off = 0;
     this.vis = 0;
     this.setPhase('hunting');
   }
@@ -434,7 +444,11 @@ class Crosser extends Base<Traveller> {
   private finishHold(t: number): void {
     const m = this.h.marbles[this.held];
     const k = this.def.kind === 'fish' ? 0.5 : 0.4;
-    const mo = this.mouth();
+    // release on the lane itself (generator-guaranteed free space), not at a swerved head
+    const px = -this.dir.y;
+    const py = this.dir.x;
+    const base = this.mouth();
+    const mo = { x: base.x - px * this.off, y: base.y - py * this.off };
     const sp = this.speed() * k;
     if (this.def.kind === 'fish') this.ignore.push(m.id);
     this.decide(t, m, mo.x, mo.y, this.dir.x * sp, this.dir.y * sp);
@@ -452,8 +466,34 @@ class Crosser extends Base<Traveller> {
     }
     this.passT += dt;
     const dist = Math.min(this.plen, this.speed() * this.passT);
-    this.hx = this.from.x + this.dir.x * dist;
-    this.hy = this.from.y + this.dir.y * dist;
+    const lx = this.from.x + this.dir.x * dist;
+    const ly = this.from.y + this.dir.y * dist;
+    // Swerve toward the nearest catchable marble just ahead; drift back to the
+    // lane while holding (releases happen on the lane, which the generator keeps clear).
+    const sw = SWERVE[d.kind];
+    const px = -this.dir.y;
+    const py = this.dir.x;
+    let want = 0;
+    if (this.held < 0 && !(d.kind === 'snake' && this.caught) && this.passT < this.total - 0.3) {
+      let best = Infinity;
+      for (const m of this.h.marbles) {
+        if (!this.catchable(m) || this.ignore.includes(m.id)) continue;
+        const rx = m.x - lx;
+        const ry = m.y - ly;
+        const along = rx * this.dir.x + ry * this.dir.y;
+        const side = rx * px + ry * py;
+        if (along < -0.5 || along > sw.ahead || Math.abs(side - this.off) > sw.side) continue;
+        const score = Math.abs(side - this.off) + Math.max(0, along) * 0.5;
+        if (score < best) {
+          best = score;
+          want = Math.max(-sw.maxDev, Math.min(sw.maxDev, side));
+        }
+      }
+    }
+    const maxStep = sw.speed * this.h.speed * dt;
+    this.off += Math.max(-maxStep, Math.min(maxStep, want - this.off));
+    this.hx = lx + px * this.off;
+    this.hy = ly + py * this.off;
     this.vis = Math.max(0, Math.min(1, this.passT / 0.4, (this.total - this.passT) / 0.4));
 
     if (this.held < 0 && !(d.kind === 'snake' && this.caught) && this.vis >= 0.5) {
@@ -475,7 +515,8 @@ class Crosser extends Base<Traveller> {
     }
 
     const ended = this.passT >= this.total - EPS;
-    if (this.held >= 0 && (ended || t - this.heldAt >= this.h.holdTime - EPS)) this.finishHold(t);
+    const back = Math.abs(this.off) < 0.05;
+    if (this.held >= 0 && (ended || (back && t - this.heldAt >= this.h.holdTime - EPS))) this.finishHold(t);
     if (ended) {
       this.waiting = true;
       this.timer = d.rest;
