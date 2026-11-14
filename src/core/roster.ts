@@ -489,10 +489,17 @@ export function skinCatalog(enabled: readonly SkinType[], count = 200): CatalogE
 }
 
 /** Build the roster: fixed looks for (enabled types, count); only the spawn order depends on the seed. */
-export function createRoster(config: GameConfig, seed: number): MarbleProfile[] {
+/**
+ * @param preferredKeys looks that must be in the race when possible (e.g. the
+ *   marbles spectators have named). They are taken first — in catalog order,
+ *   keeping only enabled skin types — and the rest is filled from the catalog.
+ *   If there are more preferred looks than `count`, the first `count` (in
+ *   catalog order) are used. Empty => exactly the plain first-N catalog roster.
+ */
+export function createRoster(config: GameConfig, seed: number, preferredKeys: readonly string[] = []): MarbleProfile[] {
   const count = Math.max(0, Math.floor(config.marbles.count));
   const enabled = SKIN_ORDER.filter((t) => config.marbles.skins[t]);
-  const entries = skinCatalog(enabled, count);
+  const entries = preferredKeys.length ? pickWithPreferred(enabled, count, preferredKeys) : skinCatalog(enabled, count);
   const rng = new Rng((seed >>> 0) ^ 0x51ed270b);
   rng.shuffle(entries);
   return entries.map((e, i) => ({
@@ -501,4 +508,31 @@ export function createRoster(config: GameConfig, seed: number): MarbleProfile[] 
     key: e.key,
     skin: { type: e.skin.type, colors: [...e.skin.colors] },
   }));
+}
+
+function pickWithPreferred(enabled: SkinType[], count: number, preferredKeys: readonly string[]): CatalogEntry[] {
+  const wanted = new Set(preferredKeys);
+  const types = enabled.length ? enabled : (['solid'] as SkinType[]);
+  // catalog order of the mixed roster first, then any wanted look further down its type list
+  const mixed = skinCatalog(types, 200);
+  const found: CatalogEntry[] = mixed.filter((e) => wanted.has(e.key));
+  const seen = new Set(found.map((e) => e.key));
+  for (const t of types) {
+    for (const e of catalogForType(t)) {
+      if (wanted.has(e.key) && !seen.has(e.key)) {
+        found.push(e);
+        seen.add(e.key);
+      }
+    }
+  }
+  const out = found.slice(0, count);
+  const used = new Set(out.map((e) => e.key));
+  for (const e of skinCatalog(types, count + out.length)) {
+    if (out.length >= count) break;
+    if (!used.has(e.key)) {
+      out.push(e);
+      used.add(e.key);
+    }
+  }
+  return out;
 }

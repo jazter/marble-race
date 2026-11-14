@@ -29,6 +29,8 @@ export interface ValidateOptions {
   onProgress?: (p: ValidationProgress) => void;
   signal?: AbortSignal;
   sliceMs?: number;
+  /** Marble looks to include first (e.g. ones spectators named). Cosmetic only: never changes the physics. */
+  preferredKeys?: readonly string[];
 }
 
 export interface ValidationResult {
@@ -113,7 +115,7 @@ export async function generateValidatedRace(config: GameConfig, opts: ValidateOp
     let roster: MarbleProfile[];
     try {
       map = generateMap(config, seed);
-      roster = createRoster(config, seed);
+      roster = createRoster(config, seed, opts.preferredKeys ?? []);
     } catch (err) {
       const reason = 'Error al generar el mapa: ' + (err instanceof Error ? err.message : String(err));
       rejected.push({ seed, reason });

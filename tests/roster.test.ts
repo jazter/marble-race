@@ -125,3 +125,39 @@ describe('multicolour catalog', () => {
     expect(sigs.length).toBeGreaterThanOrEqual(200);
   });
 });
+
+describe('preferred (named) looks', () => {
+  const cfgN = (n: number) => {
+    const c = defaultConfig();
+    c.marbles.count = n;
+    return c;
+  };
+  it('keeps named marbles when the count goes down', () => {
+    const full = createRoster(cfgN(20), 7);
+    const named = full.filter((_, i) => i % 4 === 0).map((p) => p.key!); // 5 looks
+    const small = createRoster(cfgN(8), 7, named);
+    expect(small.length).toBe(8);
+    for (const k of named) expect(small.some((p) => p.key === k)).toBe(true);
+    expect(new Set(small.map((p) => p.key)).size).toBe(8);
+  });
+  it('only drops named marbles when the count is below the number of named ones', () => {
+    const named = skinCatalog(['solid', 'bicolor', 'tricolor', 'striped', 'multicolor', 'silver', 'gold', 'glass'], 30)
+      .slice(20, 30)
+      .map((e) => e.key);
+    const r = createRoster(cfgN(4), 3, named);
+    expect(r.length).toBe(4);
+    expect(r.every((p) => named.includes(p.key!))).toBe(true);
+  });
+  it('is identical to the plain roster without preferred keys, and deterministic', () => {
+    expect(createRoster(cfgN(20), 5, [])).toEqual(createRoster(cfgN(20), 5));
+    const named = ['solid-rubi', 'gold-oro'];
+    expect(createRoster(cfgN(10), 5, named)).toEqual(createRoster(cfgN(10), 5, named));
+  });
+  it('ignores named looks whose skin type is disabled', () => {
+    const c = cfgN(6);
+    c.marbles.skins.gold = false;
+    const r = createRoster(c, 1, ['gold-oro', 'solid-rubi']);
+    expect(r.some((p) => p.key === 'gold-oro')).toBe(false);
+    expect(r.some((p) => p.key === 'solid-rubi')).toBe(true);
+  });
+});
