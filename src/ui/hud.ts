@@ -10,6 +10,7 @@ const REASONS: Record<EliminationReason, string> = {
   destroy: 'fue destruida',
   offscreen: 'quedó fuera de cámara',
   outOfBounds: 'salió del mapa',
+  monster: 'fue devorada por un monstruo',
 };
 
 interface Row {

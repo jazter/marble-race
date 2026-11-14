@@ -40,6 +40,13 @@ export type CameraMode =
   | 'path' // stays on the course centre-line at the leader's progress
   | 'scroll'; // moves along the centre-line at a constant speed (chasing camera)
 
+/** Creatures that grab marbles, hold them, then devour (destroy) or release them. */
+export type MonsterKind =
+  | 'spider' // hangs from a thread and drops onto the marble below it
+  | 'octopus' // sits in the course; 8 tentacles, each can hold one marble
+  | 'fish' // swims across the course and catches the marble it meets
+  | 'snake'; // slithers across the course at any angle and catches a marble
+
 export type SwitchActionType =
   | 'lowGravity'
   | 'highGravity'
@@ -99,6 +106,18 @@ export interface GameConfig {
     speed: number; // multiplier on mechanism angular speeds
     effectChance: number; // 0..1 chance a mechanism carries an effect (otherwise just solid)
     zones: boolean; // allow static modifier pads (zones)
+  };
+
+  monsters: {
+    kinds: Record<MonsterKind, boolean>;
+    /** Monsters per map (0..8). */
+    count: number;
+    /** 0..1 probability that a monster devours (destroys) a caught marble instead of releasing it. */
+    destroyChance: number;
+    /** Seconds a monster holds a caught marble before deciding. */
+    holdTime: number;
+    /** Multiplier on monster movement speeds. */
+    speed: number;
   };
 
   switches: {
@@ -191,6 +210,13 @@ export function defaultConfig(): GameConfig {
       speed: 1,
       effectChance: 0.6,
       zones: true,
+    },
+    monsters: {
+      kinds: { spider: true, octopus: true, fish: true, snake: true },
+      count: 3,
+      destroyChance: 0.4,
+      holdTime: 2,
+      speed: 1,
     },
     switches: {
       enabled: true,

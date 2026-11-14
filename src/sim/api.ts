@@ -7,7 +7,7 @@
  * same number of step() calls => identical results. It must not depend on
  * wall-clock time, rendering, window size or Math.random().
  */
-import type { EffectType, GameConfig, WallReaction } from '../core/config';
+import type { EffectType, GameConfig, MonsterKind, WallReaction } from '../core/config';
 import type { MapDef, MarbleProfile, Vec } from '../core/types';
 
 export type MarbleStatus = 'waiting' | 'racing' | 'finished' | 'eliminated';
@@ -16,7 +16,8 @@ export type EliminationReason =
   | 'wall' // touched a 'kill' wall
   | 'destroy' // destroy effect (saw, mechanism, zone)
   | 'offscreen' // outside the camera too long (config.camera.offscreenKill)
-  | 'outOfBounds'; // left map.bounds
+  | 'outOfBounds' // left map.bounds
+  | 'monster'; // devoured by a monster
 
 export interface MarbleState {
   id: number;
@@ -38,6 +39,8 @@ export interface MarbleState {
   eliminatedAt?: number;
   /** Seconds this marble has been outside the camera view (0 when inside). */
   offscreenTime: number;
+  /** Id of the monster currently holding this marble (its x/y follow the monster). */
+  heldBy?: string;
 }
 
 export interface LinkPose {
@@ -51,6 +54,44 @@ export interface MechanismPose {
   links: LinkPose[];
   /** World centre of the attract/repel field, if any. */
   field?: Vec;
+}
+
+export type MonsterPhase =
+  | 'idle' // waiting (spider hanging, octopus resting)
+  | 'hunting' // spider dropping / tentacle reaching / fish or snake crossing
+  | 'holding' // has caught something and is holding it
+  | 'returning' // spider climbing back, tentacle retracting
+  | 'hidden'; // fish / snake between passes
+
+export interface TentacleState {
+  /** World position of the tentacle tip. */
+  x: number;
+  y: number;
+  state: 'idle' | 'reach' | 'hold' | 'retract';
+  marbleId?: number;
+}
+
+export interface MonsterState {
+  id: string;
+  kind: MonsterKind;
+  phase: MonsterPhase;
+  /** Seconds spent in the current phase (drives animations). */
+  phaseTime: number;
+  /** Body (spider/octopus) or head (fish/snake) position. */
+  x: number;
+  y: number;
+  /** Facing / travel direction (radians). */
+  angle: number;
+  /** 0..1 visibility (fish/snake fade in/out at the course edges). */
+  visible: number;
+  /** Marble ids currently held. */
+  holding: number[];
+  /** Octopus only. */
+  tentacles?: TentacleState[];
+  /** Snake/fish: start of the current pass (render draws the body from here to the head). */
+  passFrom?: Vec;
+  /** Spider: current thread length. */
+  threadLength?: number;
 }
 
 export interface SwitchState {
@@ -93,6 +134,16 @@ export type SimEvent =
       y: number;
     }
   | { t: number; type: 'switch'; switchId: string; active: boolean }
+  | {
+      t: number;
+      type: 'monster';
+      action: 'grab' | 'release' | 'devour';
+      monsterId: string;
+      kind: MonsterKind;
+      marbleId: number;
+      x: number;
+      y: number;
+    }
   | { t: number; type: 'raceEnd'; reason: RaceEndReason };
 
 export type RaceEndReason = 'podium' | 'allDone' | 'timeout' | 'noMarbles';
@@ -126,6 +177,8 @@ export interface Simulation {
   getSwitchStates(): readonly SwitchState[];
   getCamera(): CameraState;
   getPhysicsState(): PhysicsState;
+  /** Current state of every monster in map.monsters (same order). */
+  getMonsterStates(): readonly MonsterState[];
 
   /** Returns and clears events emitted since the last call. */
   drainEvents(): SimEvent[];

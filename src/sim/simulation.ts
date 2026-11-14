@@ -22,6 +22,7 @@ import type {
   SimEvent,
   Simulation,
   SwitchState,
+  MonsterState,
 } from './api';
 import {
   addFixtures,
@@ -790,6 +791,10 @@ class SimImpl implements Simulation {
 
   getCamera(): CameraState {
     return this.cam.state;
+  }
+
+  getMonsterStates(): readonly MonsterState[] {
+    return []; // TODO(monsters): implemented by the monsters work
   }
 
   getPhysicsState(): PhysicsState {

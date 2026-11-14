@@ -11,7 +11,7 @@
  * these coordinates (x' = x cos a - y sin a, y' = x sin a + y cos a), which on
  * screen (y down) looks clockwise for positive angles.
  */
-import type { EffectType, MechanismKind, SkinType, SwitchActionType, WallReaction } from './config';
+import type { EffectType, MechanismKind, MonsterKind, SkinType, SwitchActionType, WallReaction } from './config';
 
 export interface Vec {
   x: number;
@@ -133,6 +133,67 @@ export interface Switch {
   label: string;
 }
 
+/* -------------------------------------------------------------- monsters */
+
+/**
+ * Monsters are NOT physics obstacles (except the octopus body): the simulation
+ * moves them along their scripted paths and catches marbles geometrically.
+ * All points are world coordinates. `size` = body radius in metres (also the
+ * catch radius around the grabbing part).
+ */
+export type Monster =
+  | {
+      id: string;
+      kind: 'spider';
+      /** Where the thread hangs from (a ceiling point above the course). */
+      anchor: Vec;
+      /** Unit vector the spider descends along (normally map.flowDir). */
+      down: Vec;
+      /** Thread length while idle / after catching (body hangs at anchor + down * restLength). */
+      restLength: number;
+      /** Longest the thread can get while dropping onto a marble. */
+      maxLength: number;
+      /** Half-width (m) of the column below the anchor in which it notices marbles. */
+      huntWidth: number;
+      size: number;
+    }
+  | {
+      id: string;
+      kind: 'octopus';
+      /** Body centre. The body is a SOLID static circle of `bodyRadius` in the simulation. */
+      center: Vec;
+      bodyRadius: number;
+      /** Max tentacle reach measured from the body centre. */
+      reach: number;
+      /** Number of tentacles (8); each one holds at most one marble. */
+      tentacles: number;
+      /** Angle (radians) the head points to (render: "up" of the octopus). */
+      facing: number;
+      size: number;
+    }
+  | {
+      id: string;
+      kind: 'fish';
+      /** The fish always swims from a to b (left -> right in the course), then hides `rest` s. */
+      a: Vec;
+      b: Vec;
+      speed: number; // m/s along a->b
+      rest: number; // seconds hidden between passes
+      phase: number; // seconds before the first pass
+      size: number;
+    }
+  | {
+      id: string;
+      kind: 'snake';
+      /** Candidate crossing lines (different angles); each pass picks one (seeded) and a direction. */
+      passes: { a: Vec; b: Vec }[];
+      length: number; // body length in metres
+      speed: number; // m/s
+      rest: number; // seconds hidden between passes
+      phase: number; // seconds before the first pass
+      size: number;
+    };
+
 /* ------------------------------------------------------------- the map */
 
 export interface SegmentInfo {
@@ -155,6 +216,8 @@ export interface MapDef {
   mechanisms: Mechanism[];
   zones: Zone[];
   switches: Switch[];
+  /** Optional (older maps have none). */
+  monsters?: Monster[];
   start: {
     /** One spawn point per marble (length === config.marbles.count). */
     spawnPoints: Vec[];
@@ -190,3 +253,6 @@ export interface MarbleProfile {
    */
   key?: string;
 }
+
+/** The Monster variant of a given kind, e.g. MonsterOf<'spider'>. */
+export type MonsterOf<K extends MonsterKind> = Extract<Monster, { kind: K }>;
