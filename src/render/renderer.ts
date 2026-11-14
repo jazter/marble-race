@@ -122,6 +122,17 @@ export class Renderer {
 
   /** Name tags above the top-3 marbles. */
   nameTags = true;
+  /** Custom (spectator-given) name of a marble, or null. Named marbles always get a tag + ring. */
+  customName: (p: MarbleProfile) => string | null = () => null;
+  private liveView: View | null = null;
+  /**
+   * Staging ("Elige tu canica"): frame the start box instead of the sim camera,
+   * leaving `stagingInsetRight` CSS px free on the right for the staging panel.
+   * Purely visual — the sim is not stepped while staging.
+   */
+  staging = false;
+  stagingInsetRight = 0;
+  private stagingT = 0; // 1 = staging framing, 0 = sim camera (blends after the countdown starts)
 
   // preview viewport
   private pv = { cx: 0, cy: 0, scale: 1, fitted: true };
@@ -251,7 +262,10 @@ export class Renderer {
     if (this.map !== sim.map) this.setMap(sim.map);
     this.clock = performance.now() / 1000;
     const cam = sim.getCamera();
-    const view = this.cameraView(cam);
+    const camView = this.cameraView(cam);
+    this.stagingT = this.staging ? 1 : Math.max(0, this.stagingT - dt / 0.8);
+    const view = this.stagingT > 0 ? this.blendViews(this.stagingView(camView), camView, this.stagingT) : camView;
+    this.liveView = view;
     const marbles = sim.getMarbles();
     this.handleEvents(events, marbles);
     this.particles.update(dt);
@@ -273,6 +287,39 @@ export class Renderer {
   private cameraView(cam: CameraState): View {
     const s = Math.min(this.W / cam.width, this.H / cam.height);
     return this.makeView(s, cam.x, cam.y);
+  }
+
+  /** Fit the start box (area + spawn points) into the canvas minus the staging panel. */
+  private stagingView(camView: View): View {
+    const map = this.map;
+    if (!map) return camView;
+    let x0 = Infinity;
+    let y0 = Infinity;
+    let x1 = -Infinity;
+    let y1 = -Infinity;
+    for (const p of [...map.start.area, ...map.start.spawnPoints]) {
+      x0 = Math.min(x0, p.x);
+      y0 = Math.min(y0, p.y);
+      x1 = Math.max(x1, p.x);
+      y1 = Math.max(y1, p.y);
+    }
+    if (!Number.isFinite(x0)) return camView;
+    const pad = 1.5;
+    const availW = Math.max(this.W * 0.45, this.W - this.stagingInsetRight * this.dpr);
+    let sc = Math.min((availW * 0.9) / (x1 - x0 + 2 * pad), (this.H * 0.7) / (y1 - y0 + 2 * pad));
+    sc = Math.min(Math.max(sc, camView.s * 0.5), camView.s * 2.5);
+    const tx = availW / 2 - ((x0 + x1) / 2) * sc;
+    const ty = this.H / 2 - ((y0 + y1) / 2) * sc;
+    return { s: sc, tx, ty, box: { x0: -tx / sc, y0: -ty / sc, x1: (this.W - tx) / sc, y1: (this.H - ty) / sc } };
+  }
+
+  /** t = 1 -> a, t = 0 -> b (eased). */
+  private blendViews(a: View, b: View, t: number): View {
+    const e = t * t * (3 - 2 * t);
+    const sc = b.s + (a.s - b.s) * e;
+    const tx = b.tx + (a.tx - b.tx) * e;
+    const ty = b.ty + (a.ty - b.ty) * e;
+    return { s: sc, tx, ty, box: { x0: -tx / sc, y0: -ty / sc, x1: (this.W - tx) / sc, y1: (this.H - ty) / sc } };
   }
 
   private makeView(s: number, cx: number, cy: number): View {
@@ -458,7 +505,7 @@ export class Renderer {
     }
 
     this.drawLabels(view);
-    if (cam && this.nameTags) this.drawNameTags(view, marbles as readonly MarbleState[]);
+    if (cam) this.drawNameTags(view, marbles as readonly MarbleState[]);
   }
 
   private drawBackdrop(view: View): void {
@@ -928,29 +975,90 @@ export class Renderer {
     }
   }
 
+  /** Nearest non-eliminated marble under a CSS-pixel point of the canvas (live race / staging). */
+  hitTest(marbles: readonly MarbleState[], xCss: number, yCss: number, touch = false): MarbleState | null {
+    const view = this.liveView;
+    if (!view) return null;
+    const wx = (xCss * this.dpr - view.tx) / view.s;
+    const wy = (yCss * this.dpr - view.ty) / view.s;
+    const minWorld = ((touch ? 26 : 12) * this.dpr) / view.s; // generous minimum target
+    let best: MarbleState | null = null;
+    let bestD = Infinity;
+    for (const m of marbles) {
+      if (m.status === 'eliminated') continue;
+      const reach = Math.max(m.radius * 1.6, minWorld);
+      const d = Math.hypot(m.x - wx, m.y - wy);
+      if (d <= reach && d / reach < bestD) {
+        best = m;
+        bestD = d / reach;
+      }
+    }
+    return best;
+  }
+
   private drawNameTags(view: View, marbles: readonly MarbleState[]): void {
     const ctx = this.ctx;
-    const live = marbles.filter((m) => m.status === 'racing' || m.status === 'finished');
+    const dpr = this.dpr;
+    const live = marbles.filter((m) => m.status === 'racing' || m.status === 'finished' || m.status === 'waiting');
+    const rankOf = (m: MarbleState) => (m.status === 'finished' ? m.rank ?? 99 : 1000 - m.progress);
     live.sort((a, b) => {
-      if (a.status === 'finished' && b.status === 'finished') return (a.rank ?? 99) - (b.rank ?? 99);
-      if (a.status === 'finished') return -1;
-      if (b.status === 'finished') return 1;
-      return b.progress - a.progress;
+      const fa = a.status === 'finished' ? 0 : 1;
+      const fb = b.status === 'finished' ? 0 : 1;
+      if (fa !== fb) return fa - fb;
+      return rankOf(a) - rankOf(b);
     });
+    const topIds = new Set<number>();
+    if (this.nameTags && live.some((m) => m.status !== 'waiting')) {
+      for (const m of live.slice(0, 3)) topIds.add(m.id);
+    }
+    const fontPx = 11 * dpr;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'alphabetic';
-    ctx.font = FONT.replace('12px', `${11 * this.dpr}px`);
-    live.slice(0, 3).forEach((m, i) => {
+    ctx.font = FONT.replace('12px', `${fontPx}px`);
+    const placed: { x0: number; y0: number; x1: number; y1: number }[] = [];
+    // highlight rings for named marbles
+    for (const m of live) {
+      if (!this.customName(m.profile)) continue;
       const x = m.x * view.s + view.tx;
-      const y = m.y * view.s + view.ty - m.radius * view.s - 5 * this.dpr;
-      if (x < 0 || y < 0 || x > this.W || y > this.H) return;
-      const txt = `${i + 1}º ${m.profile.name}`;
-      ctx.lineWidth = 3 * this.dpr;
-      ctx.strokeStyle = 'rgba(8,10,16,0.85)';
+      const y = m.y * view.s + view.ty;
+      if (x < -50 || y < -50 || x > this.W + 50 || y > this.H + 50) continue;
+      const r = m.radius * view.s + 4 * dpr;
+      ctx.lineWidth = 3 * dpr;
+      ctx.strokeStyle = 'rgba(8,10,16,0.55)';
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.strokeStyle = 'rgba(255,224,122,0.9)';
+      ctx.lineWidth = 1.5 * dpr;
+      ctx.stroke();
+    }
+    let rankIdx = 0;
+    for (const m of live) {
+      const custom = this.customName(m.profile);
+      const top = topIds.has(m.id);
+      const idx = top ? rankIdx++ : -1;
+      if (!custom && !top) continue;
+      const x = m.x * view.s + view.tx;
+      let y = m.y * view.s + view.ty - m.radius * view.s - 8 * dpr;
+      if (x < 0 || y < 0 || x > this.W || y > this.H) continue;
+      const txt = top ? `${idx + 1}º ${custom ?? m.profile.name}` : (custom as string);
+      const w = ctx.measureText(txt).width + 6 * dpr;
+      const h = fontPx + 4 * dpr;
+      // nudge upwards to avoid piling tags on top of each other
+      for (let tries = 0; tries < 4; tries++) {
+        const box = { x0: x - w / 2, x1: x + w / 2, y0: y - h, y1: y };
+        if (!placed.some((p) => box.x0 < p.x1 && box.x1 > p.x0 && box.y0 < p.y1 && box.y1 > p.y0)) break;
+        y -= h;
+      }
+      if (y < 0) continue;
+      placed.push({ x0: x - w / 2, x1: x + w / 2, y0: y - h, y1: y });
+      ctx.lineWidth = 3 * dpr;
+      ctx.lineJoin = 'round';
+      ctx.strokeStyle = 'rgba(8,10,16,0.9)';
       ctx.strokeText(txt, x, y);
-      ctx.fillStyle = ['#ffd54a', '#dfe5ee', '#f0a36b'][i];
+      ctx.fillStyle = top ? ['#ffd54a', '#dfe5ee', '#f0a36b'][Math.min(idx, 2)] : '#ffe9a6';
       ctx.fillText(txt, x, y);
-    });
+    }
   }
 
   /* ---------------------------------------------------------- minimap */

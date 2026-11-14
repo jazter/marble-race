@@ -7,13 +7,14 @@ Carreras de canicas procedurales en el navegador, al estilo de los *marble races
 1. **Generar un mapa**: pulsa *🎲 Generar mapa*. El juego crea el recorrido a partir de una semilla.
 2. **Validación**: una simulación previa corre la carrera completa sin dibujarla. Si ninguna canica llega a la meta, prueba con la semilla siguiente.
 3. **Vista previa**: observa el mapa completo, con zoom y desplazamiento.
-4. **Carrera**: pulsa *▶ Iniciar carrera*. Al terminar se muestra el podio.
+4. **Elige tu canica**: pulsa *▶ Iniciar carrera*; las canicas esperan en la salida. Toca una (o su fila en la lista) para ponerle nombre; los nombres se recuerdan entre carreras para las canicas con el mismo aspecto (*Reiniciar nombres* los borra).
+5. **Carrera**: pulsa *▶ Iniciar conteo* (o espacio). Al terminar se muestra el podio.
 
 Controles durante la carrera:
 
 | Control | Acción |
 |---|---|
-| Velocidad 0.5× – 8× | Cambia la velocidad de la simulación |
+| Velocidad 0.3× – 8× | Cambia la velocidad de la simulación (por defecto 0.6×; la cuenta atrás siempre va a 1×) |
 | Pausa (barra espaciadora) | Pausa o reanuda |
 | ↺ Reiniciar | Repite exactamente la misma carrera (la simulación es determinista) |
 | 🗺️ Nuevo mapa | Genera otro mapa |

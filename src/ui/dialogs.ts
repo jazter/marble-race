@@ -1,0 +1,131 @@
+/** In-page modal dialogs: rename a marble, and a generic confirmation (no window.confirm). */
+import type { MarbleProfile } from '../core/types';
+import { $, el } from './dom';
+import { keyOf, customOf, marbleCanvas } from './marbleLabel';
+import { setCustomName } from './names';
+
+let openCount = 0;
+let closer: (() => void) | null = null;
+
+/** True while any dialog is open (global shortcuts must not fire). */
+export function isDialogOpen(): boolean {
+  return openCount > 0;
+}
+
+export function closeDialog(): void {
+  closer?.();
+}
+
+function open(card: HTMLElement, initialFocus: HTMLElement, onCancel: () => void): void {
+  closeDialog();
+  const root = $('dialog');
+  const prev = document.activeElement as HTMLElement | null;
+  root.innerHTML = '';
+  root.append(card);
+  root.classList.add('show');
+  openCount = 1;
+
+  const close = (): void => {
+    if (!openCount) return;
+    openCount = 0;
+    closer = null;
+    root.classList.remove('show');
+    root.innerHTML = '';
+    root.onkeydown = null;
+    root.onpointerdown = null;
+    if (prev && document.contains(prev) && prev.offsetParent !== null) prev.focus();
+  };
+  closer = close;
+
+  root.onpointerdown = (e) => {
+    if (e.target === root) {
+      onCancel();
+      close();
+    }
+  };
+  root.onkeydown = (e) => {
+    e.stopPropagation(); // no space / M / etc. shortcuts while a dialog is open
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      onCancel();
+      close();
+    } else if (e.key === 'Tab') {
+      const f = Array.from(card.querySelectorAll<HTMLElement>('button, input')).filter((n) => !n.hasAttribute('disabled'));
+      if (!f.length) return;
+      const first = f[0];
+      const last = f[f.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
+  };
+  initialFocus.focus();
+  if (initialFocus instanceof HTMLInputElement) initialFocus.select();
+}
+
+export function openNaming(profile: MarbleProfile): void {
+  const key = keyOf(profile);
+  const input = el('input', {
+    type: 'text',
+    class: 'name-input',
+    maxlength: '24',
+    placeholder: 'Escribe un nombre',
+    autocomplete: 'off',
+    autocapitalize: 'words',
+    spellcheck: 'false',
+    enterkeyhint: 'done',
+    'aria-label': 'Nombre de la canica',
+  }) as HTMLInputElement;
+  const current = customOf(profile);
+  input.value = current ?? '';
+
+  const save = (): void => {
+    const v = input.value.trim().slice(0, 24);
+    setCustomName(key, v ? v : null);
+    closeDialog();
+  };
+  const btn = (label: string, cls: string, fn: () => void) => {
+    const b = el('button', { type: 'button', class: `btn ${cls}` }, label);
+    b.addEventListener('click', fn);
+    return b;
+  };
+  const remove = btn('Quitar nombre', '', () => {
+    setCustomName(key, null);
+    closeDialog();
+  });
+  if (!current) remove.setAttribute('disabled', '');
+  const card = el('div', { class: 'dialog-card', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Nombrar canica' }, [
+    el('div', { class: 'dialog-marble' }, [marbleCanvas(profile, 56)]),
+    el('h2', {}, 'Nombrar canica'),
+    el('p', { class: 'muted' }, `Color: ${profile.name}`),
+    input,
+    el('div', { class: 'btn-row' }, [btn('Guardar', 'primary', save), remove, btn('Cancelar', '', closeDialog)]),
+  ]);
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      save();
+    }
+  });
+  open(card, input, () => {});
+}
+
+export function openConfirm(opts: { title: string; message: string; confirmLabel: string; onConfirm: () => void }): void {
+  const ok = el('button', { type: 'button', class: 'btn primary' }, opts.confirmLabel);
+  ok.addEventListener('click', () => {
+    closeDialog();
+    opts.onConfirm();
+  });
+  const cancel = el('button', { type: 'button', class: 'btn' }, 'Cancelar');
+  cancel.addEventListener('click', closeDialog);
+  const card = el('div', { class: 'dialog-card', role: 'alertdialog', 'aria-modal': 'true', 'aria-label': opts.title }, [
+    el('h2', {}, opts.title),
+    el('p', { class: 'muted' }, opts.message),
+    el('div', { class: 'btn-row' }, [ok, cancel]),
+  ]);
+  open(card, cancel, () => {});
+}

@@ -3,6 +3,7 @@ import type { MapDef, MarbleProfile } from '../core/types';
 import type { EliminationReason, MarbleState, SimEvent, Simulation } from '../sim/api';
 import { skinSwatchCss } from '../render/skins';
 import { $, el, fmtTime } from './dom';
+import { labelNode, labelText } from './marbleLabel';
 
 const REASONS: Record<EliminationReason, string> = {
   wall: 'fue eliminada por una pared letal',
@@ -16,6 +17,8 @@ interface Row {
   pos: HTMLElement;
   info: HTMLElement;
   key: string;
+  nameEl: HTMLElement;
+  profile: MarbleProfile;
 }
 
 export class Hud {
@@ -35,21 +38,36 @@ export class Hud {
   constructor(
     private map: MapDef,
     private roster: MarbleProfile[],
+    private onPick: (p: MarbleProfile) => void = () => {},
   ) {
     this.board.innerHTML = '';
     this.toasts.innerHTML = '';
     this.rows = roster.map((p) => {
       const pos = el('span', { class: 'lb-pos' });
       const info = el('span', { class: 'lb-info' });
-      const node = el('div', { class: 'lb-row' }, [
+      const nameEl = el('span', { class: 'lb-name' });
+      const node = el('div', { class: 'lb-row', title: 'Clic para ponerle nombre' }, [
         pos,
         el('span', { class: 'swatch', style: `background:${skinSwatchCss(p.skin)}` }),
-        el('span', { class: 'lb-name', title: p.name }, p.name),
+        nameEl,
         info,
       ]);
+      node.addEventListener('click', () => this.onPick(p));
       this.board.append(node);
-      return { node, pos, info, key: '' };
+      const row: Row = { node, pos, info, key: '', nameEl, profile: p };
+      this.paintName(row);
+      return row;
     });
+  }
+
+  private paintName(row: Row): void {
+    row.nameEl.replaceChildren(labelNode(row.profile));
+    row.nameEl.title = labelText(row.profile);
+  }
+
+  /** Re-render marble names after a custom name changed. */
+  refreshNames(): void {
+    for (const r of this.rows) this.paintName(r);
   }
 
   destroy(): void {
@@ -167,7 +185,8 @@ export class Hud {
   }
 
   private name(id: number): string {
-    return this.roster[id]?.name ?? `Canica ${id + 1}`;
+    const p = this.roster[id];
+    return p ? labelText(p) : `Canica ${id + 1}`;
   }
 
   private toast(e: SimEvent): void {

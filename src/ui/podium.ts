@@ -1,17 +1,17 @@
 /** Podium overlay (classic 2-1-3 blocks with the marble skins on top). */
 import type { MarbleProfile } from '../core/types';
 import type { RaceResult } from '../sim/api';
-import { drawMarbleSprite, skinSwatchCss } from '../render/skins';
+import { skinSwatchCss } from '../render/skins';
 import { $, el, fmtTime } from './dom';
+import { customOf, marbleCanvas } from './marbleLabel';
+import { displayName } from './names';
 
-function marbleCanvas(p: MarbleProfile, cssSize: number): HTMLCanvasElement {
-  const dpr = Math.min(window.devicePixelRatio || 1, 2);
-  const c = document.createElement('canvas');
-  c.width = c.height = Math.round(cssSize * dpr);
-  c.style.width = c.style.height = `${cssSize}px`;
-  const g = c.getContext('2d')!;
-  drawMarbleSprite(g, p.skin, c.width / 2, c.height / 2, c.width / 2 - 2 * dpr, -0.5);
-  return c;
+function podName(prof: MarbleProfile | undefined, fallback: string): HTMLElement {
+  if (!prof) return el('div', { class: 'pod-name' }, fallback);
+  const root = el('div', { class: 'pod-name' }, displayName(prof));
+  const c = customOf(prof);
+  if (c && c !== prof.name) root.append(el('small', { class: 'pod-sub' }, prof.name));
+  return root;
 }
 
 export function showPodium(
@@ -37,7 +37,7 @@ export function showPodium(
       const prof = roster[f.marbleId];
       const col = el('div', { class: `pod-col p${idx + 1}` });
       if (prof) col.append(marbleCanvas(prof, 64));
-      col.append(el('div', { class: 'pod-name' }, f.name), el('div', { class: 'pod-time' }, fmtTime(f.time)));
+      col.append(podName(prof, f.name), el('div', { class: 'pod-time' }, fmtTime(f.time)));
       const block = el('div', { class: 'pod-block', style: `height:${heights[idx]}px` }, String(idx + 1));
       col.append(block);
       stage.append(col);
@@ -50,7 +50,7 @@ export function showPodium(
         list.append(
           el('li', {}, [
             el('span', { class: 'swatch', style: `background:${prof ? skinSwatchCss(prof.skin) : '#888'}` }),
-            el('span', { class: 'lb-name' }, f.name),
+            el('span', { class: 'lb-name' }, [podName(prof, f.name)]),
             el('span', { class: 'pod-time' }, fmtTime(f.time)),
           ]),
         );

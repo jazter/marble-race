@@ -206,6 +206,7 @@ export const SECTIONS: Section[] = [
     fields: [
       { kind: 'range', label: 'Segmentos', path: 'map.segments', min: 2, max: 24, step: 1 },
       { kind: 'range', label: 'Ancho del pasillo', path: 'map.width', min: 6, max: 40, step: 1, unit: ' m' },
+      { kind: 'range', label: 'Puntos de reagrupación', path: 'map.regroups', min: 0, max: 4, step: 1, hint: 'Zonas donde la carrera se junta de nuevo' },
       { kind: 'range', label: 'Dificultad', path: 'map.difficulty', min: 0, max: 1, step: 0.01, percent: true },
       { kind: 'range', label: 'Intentos máximos', path: 'map.maxAttempts', min: 1, max: 100, step: 1 },
       { kind: 'seed', label: 'Semilla', path: 'seed' },

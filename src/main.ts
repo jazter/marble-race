@@ -10,14 +10,18 @@ import type { Simulation } from './sim';
 import { generateValidatedRace, type ValidatedRace } from './validate/validator';
 import { ConfigPanel } from './ui/configPanel';
 import { $, el } from './ui/dom';
+import { isDialogOpen, openConfirm, openNaming } from './ui/dialogs';
 import { Hud } from './ui/hud';
+import { customOf, labelNode, marbleCanvas } from './ui/marbleLabel';
+import { clearCustomNames, onNamesChanged } from './ui/names';
 import { hidePodium, showPodium } from './ui/podium';
 import { initSoundControls } from './ui/sound';
 import { clearSavedConfig, loadAudioSettings, loadConfig, saveAudioSettings, saveConfig } from './ui/storage';
 
 type Mode = 'idle' | 'generating' | 'error' | 'preview' | 'race';
 
-const SPEEDS = [0.5, 1, 2, 4, 8];
+const SPEEDS = [0.3, 0.6, 1, 2, 4, 8];
+const DEFAULT_SPEED = 0.6;
 
 let config: GameConfig = loadConfig();
 let mode: Mode = 'idle';
@@ -27,7 +31,9 @@ let sim: Simulation | null = null;
 let hud: Hud | null = null;
 let abort: AbortController | null = null;
 let paused = false;
-let speed = 1;
+let speed = DEFAULT_SPEED;
+/** Staging: the race exists (not stepped) while spectators pick and name marbles. */
+let staging = false;
 let acc = 0;
 let configDirty = false;
 let podiumTimer: number | undefined;
@@ -39,6 +45,7 @@ initSoundControls(music, saveAudioSettings);
 
 const canvas = $<HTMLCanvasElement>('game');
 const renderer = new Renderer(canvas, config, $<HTMLCanvasElement>('minimap'));
+renderer.customName = customOf;
 const idleMap = sampleMap(12, config.marbles.radius);
 
 /* ------------------------------------------------------------ panel */
@@ -75,6 +82,8 @@ function setMode(m: Mode): void {
   $('error').classList.toggle('show', m === 'error');
   $('preview-bar').classList.toggle('show', m === 'preview');
   $('hud').classList.toggle('show', m === 'race');
+  if (m !== 'race') setStaging(false);
+  $('staging').classList.toggle('show', staging);
   if (m !== 'race') {
     hidePodium();
     director = null;
@@ -175,7 +184,8 @@ function disposeRace(): void {
   sim = null;
 }
 
-function startRace(): void {
+/** Create the simulation but do NOT step it: spectators choose / name their marble first. */
+function enterStaging(): void {
   if (!race || !raceConfig) return;
   window.clearTimeout(podiumTimer);
   podiumShown = false;
@@ -183,25 +193,88 @@ function startRace(): void {
   hud?.destroy();
   sim?.destroy();
   sim = createSimulation(race.map, race.roster, raceConfig);
-  hud = new Hud(race.map, race.roster);
+  hud = new Hud(race.map, race.roster, openNaming);
   renderer.setConfig(raceConfig);
   renderer.setMap(race.map);
   renderer.resetVisuals();
   paused = false;
   acc = 0;
   $('btn-pause').textContent = '❚❚';
+  director = null;
+  setSpeed(DEFAULT_SPEED);
+  music.calm();
+  setMode('race');
+  setStaging(true);
+  buildStagingList();
+}
+
+function setStaging(on: boolean): void {
+  staging = on;
+  renderer.staging = on;
+  document.body.classList.toggle('is-staging', on);
+  $('staging').classList.toggle('show', on);
+}
+
+/** Staging -> countdown (3, 2, 1, ¡YA!) at real-time speed, then the race. */
+function startCountdown(): void {
+  if (!staging || !race || !sim || mode !== 'race') return;
+  setStaging(false);
+  acc = 0;
   const cum = cumulativeLengths(race.map.path);
   director = new MusicDirector(music, cum[cum.length - 1] ?? 0);
   music.startCountdown();
-  setMode('race');
 }
 
-$('btn-start').addEventListener('click', startRace);
-$('btn-restart').addEventListener('click', startRace);
-$('btn-new').addEventListener('click', () => {
+const stagingList = $('staging-list');
+function buildStagingList(): void {
+  stagingList.innerHTML = '';
+  if (!race) return;
+  for (const p of race.roster) {
+    const named = !!customOf(p);
+    const row = el('button', { type: 'button', class: `stg-row${named ? ' named' : ''}`, title: 'Clic para ponerle nombre' }, [
+      marbleCanvas(p, 22),
+      labelNode(p),
+      el('span', { class: 'pen', 'aria-hidden': 'true' }, '✎'),
+    ]);
+    row.addEventListener('click', () => openNaming(p));
+    stagingList.append(row);
+  }
+}
+$('btn-stg-toggle').addEventListener('click', () => $('staging-panel').classList.toggle('collapsed'));
+if (window.matchMedia('(max-width: 800px)').matches) $('staging-panel').classList.add('collapsed');
+
+function askResetNames(): void {
+  openConfirm({
+    title: 'Reiniciar nombres',
+    message: 'Se borrarán todos los nombres que pusiste a las canicas. ¿Continuar?',
+    confirmLabel: 'Borrar nombres',
+    onConfirm: clearCustomNames,
+  });
+}
+$('btn-stg-reset').addEventListener('click', askResetNames);
+
+onNamesChanged(() => {
+  hud?.refreshNames();
+  if (staging) buildStagingList();
+});
+
+// "Reiniciar nombres" also lives in the config panel ("Canicas" section)
+{
+  const body = $('config-sections').querySelector('details.sec .sec-body');
+  const b = el('button', { type: 'button', class: 'btn', id: 'btn-reset-names' }, 'Reiniciar nombres de canicas');
+  b.addEventListener('click', askResetNames);
+  body?.append(b);
+}
+
+$('btn-start').addEventListener('click', enterStaging);
+$('btn-restart').addEventListener('click', enterStaging);
+$('btn-count').addEventListener('click', startCountdown);
+const newMap = (): void => {
   disposeRace();
   void generate(true);
-});
+};
+$('btn-new').addEventListener('click', newMap);
+$('btn-stg-new').addEventListener('click', newMap);
 $('btn-fit').addEventListener('click', () => renderer.previewFit());
 
 function togglePause(): void {
@@ -222,7 +295,7 @@ function setSpeed(sp: number): void {
   speed = sp;
   speedsEl.querySelectorAll('button').forEach((b) => b.classList.toggle('on', Number(b.getAttribute('data-speed')) === sp));
 }
-setSpeed(1);
+setSpeed(DEFAULT_SPEED);
 
 $('btn-names').addEventListener('click', () => {
   renderer.nameTags = !renderer.nameTags;
@@ -232,11 +305,13 @@ $('btn-lb').addEventListener('click', () => $('leaderboard').classList.toggle('c
 if (window.matchMedia('(max-width: 800px)').matches) $('leaderboard').classList.add('collapsed');
 
 window.addEventListener('keydown', (e) => {
+  if (isDialogOpen()) return;
   const t = e.target as HTMLElement;
   if (t && /INPUT|SELECT|TEXTAREA/.test(t.tagName) && e.code === 'Space') return;
   if (e.code === 'Space' && mode === 'race') {
     e.preventDefault();
-    togglePause();
+    if (staging) startCountdown();
+    else togglePause();
   }
 });
 
@@ -247,7 +322,7 @@ function showResult(): void {
   podiumTimer = window.setTimeout(() => {
     if (mode !== 'race') return;
     showPodium(result, race!.roster, raceConfig!.race.podiumSize, {
-      onRepeat: startRace,
+      onRepeat: enterStaging,
       onNew: () => {
         disposeRace();
         void generate(true);
@@ -267,12 +342,24 @@ function frame(now: number): void {
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
   if (mode === 'race' && sim && hud) {
-    if (!paused && !sim.isOver()) {
-      acc += dt * speed;
+    if (staging) {
+      // not stepped: marbles wait at their spawn points
+    } else if (!paused && !sim.isOver()) {
+      // the countdown always runs at 1x real time; the chosen speed applies afterwards
+      const inCountdown = sim.time < sim.config.race.countdown - 1e-9;
+      acc += dt * (inCountdown ? 1 : speed);
       let steps = Math.floor(acc / SIM_DT);
       acc -= steps * SIM_DT;
       if (steps > 32) steps = 32;
       sim.stepMany(steps);
+    }
+    if (staging) {
+      const panel = $('staging-panel');
+      const wide = window.innerWidth > 800 && !panel.classList.contains('collapsed');
+      renderer.stagingInsetRight = wide ? panel.getBoundingClientRect().width + 24 : 0;
+      renderer.render(sim, dt, []);
+      requestAnimationFrame(frame);
+      return;
     }
     const events = sim.drainEvents();
     director?.update(sim, events);
@@ -321,6 +408,19 @@ canvas.addEventListener(
   },
   { passive: false },
 );
+
+canvas.addEventListener('click', (e) => {
+  if (mode !== 'race' || !sim || isDialogOpen()) return;
+  const r = canvas.getBoundingClientRect();
+  const touch = (e as PointerEvent).pointerType === 'touch' || (e as PointerEvent).pointerType === 'pen';
+  const m = renderer.hitTest(sim.getMarbles(), e.clientX - r.left, e.clientY - r.top, touch);
+  if (m) openNaming(m.profile);
+});
+canvas.addEventListener('pointermove', (e) => {
+  if (mode !== 'race' || !sim || e.pointerType === 'touch') return;
+  const r = canvas.getBoundingClientRect();
+  canvas.classList.toggle('pickable', !!renderer.hitTest(sim.getMarbles(), e.clientX - r.left, e.clientY - r.top));
+});
 
 new ResizeObserver(() => renderer.resize()).observe(canvas);
 setMode('idle');

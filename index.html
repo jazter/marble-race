@@ -78,6 +78,26 @@
           </div>
         </section>
 
+        <!-- Staging: choose your marble -->
+        <section id="staging" class="staging">
+          <div id="staging-panel" class="staging-panel">
+            <div class="stg-head">
+              <div>
+                <h2>Elige tu canica</h2>
+                <p class="muted">Toca una canica o una fila para ponerle nombre.</p>
+              </div>
+              <button id="btn-stg-toggle" class="btn icon small" type="button" aria-label="Mostrar u ocultar la lista">▾</button>
+            </div>
+            <div id="staging-list" class="stg-list"></div>
+            <div class="stg-foot"><button id="btn-stg-reset" class="btn small-text" type="button">Reiniciar nombres</button></div>
+          </div>
+          <div class="stg-bar">
+            <button id="btn-count" class="btn primary big pulse" type="button">▶ Iniciar conteo</button>
+            <button id="btn-stg-new" class="btn" type="button">🗺️<span class="lbl"> Nuevo mapa</span></button>
+            <button id="btn-music-3" class="btn icon btn-music" type="button" aria-label="Música"></button>
+          </div>
+        </section>
+
         <!-- Race HUD -->
         <section id="hud" class="hud">
           <div class="hud-top">
@@ -107,6 +127,7 @@
         <section id="podium" class="overlay center"></section>
       </main>
     </div>
+    <div id="dialog" class="modal"></div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
