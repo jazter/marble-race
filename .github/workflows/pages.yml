@@ -1,9 +1,11 @@
 name: Deploy to GitHub Pages
 
-# Manual trigger only: GitHub Pages must be enabled first
-# (Settings -> Pages -> Source: "GitHub Actions"), and the repo must be public
-# on a free account. Run it from the Actions tab.
+# Publishes https://jazter.github.io/marble-race/ on every push to main
+# (requires Settings -> Pages -> Source: "GitHub Actions"). Can also be run
+# manually from the Actions tab.
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
 
 permissions:

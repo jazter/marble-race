@@ -135,11 +135,9 @@ npx tsx scripts/sim-bench.ts   # benchmark de la simulación (opcional: número 
 
 ## Publicar en GitHub Pages
 
-El workflow `.github/workflows/pages.yml` solo se ejecuta manualmente, para no fallar en cada push mientras Pages no esté activado. Pasos:
+El juego se publica en **https://jazter.github.io/marble-race/**. El workflow `.github/workflows/pages.yml` lo despliega automáticamente en cada push a `main` (también se puede lanzar a mano desde la pestaña **Actions → Deploy to GitHub Pages → Run workflow**).
 
-1. Hacer el repositorio público (en una cuenta gratuita, GitHub Pages requiere repositorio público) o usar un plan de pago.
-2. Ir a **Settings → Pages → Source** y elegir **GitHub Actions**.
-3. Ir a la pestaña **Actions**, elegir **Deploy to GitHub Pages** y pulsar **Run workflow**.
+Requisitos (ya configurados): repositorio público y **Settings → Pages → Source: GitHub Actions**.
 
 ## Licencia
 
