@@ -1,4 +1,4 @@
-/** Usage: npx tsx scripts/preview-map.ts [seed] [gravityAngle] [count] -> PNG tiles in $PREVIEW_DIR (default screenshots/gen-preview) */
+/** Usage: npx tsx scripts/preview-map.ts [seed] [gravityAngle] [count] [monsters] -> PNG tiles in $PREVIEW_DIR (default screenshots/gen-preview) */
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 // Playwright is a dev-only tool here (global or local install).
@@ -13,6 +13,7 @@ const seed = Number(process.argv[2] ?? 1);
 const ga = Number(process.argv[3] ?? 0);
 const count = Number(process.argv[4] ?? 20);
 const cfg = defaultConfig();
+if (process.argv[5] !== undefined) cfg.monsters.count = Number(process.argv[5]);
 cfg.physics.gravityAngle = ga;
 cfg.marbles.count = count;
 const map: MapDef = generateMap(cfg, seed);
@@ -69,6 +70,31 @@ for (const s of map.switches) {
   const w = s.halfWidth, h = s.halfHeight;
   const q = [{ x: -w, y: -h }, { x: w, y: -h }, { x: w, y: h }, { x: -w, y: h }].map((p) => { const r = rotate(p, s.angle); return { x: s.position.x + r.x, y: s.position.y + r.y }; });
   o += `<polygon points="${pts(q)}" fill="#ffee00" stroke="#000" stroke-width=".5"/><text x="${X(s.position.x + 1)}" y="${Y(s.position.y - 1)}" fill="#ffee00" font-size="11">${s.label}${s.action.gateId ? ' ->' + s.action.gateId : ''}</text>`;
+}
+for (const m of map.monsters ?? []) {
+  const lab = (p: Vec, t: string) => `<text x="${X(p.x + 0.6)}" y="${Y(p.y - 0.6)}" fill="#ff8a8a" font-size="11">${t}</text>`;
+  if (m.kind === 'spider') {
+    const rest = { x: m.anchor.x + m.down.x * m.restLength, y: m.anchor.y + m.down.y * m.restLength };
+    const mx = { x: m.anchor.x + m.down.x * m.maxLength, y: m.anchor.y + m.down.y * m.maxLength };
+    const perp = { x: -m.down.y, y: m.down.x };
+    const q = [1, -1].map((sg) => ({ x: mx.x + perp.x * m.huntWidth * sg, y: mx.y + perp.y * m.huntWidth * sg }));
+    const t = [1, -1].map((sg) => ({ x: m.anchor.x + perp.x * m.huntWidth * sg, y: m.anchor.y + perp.y * m.huntWidth * sg }));
+    o += `<polygon points="${pts([t[0], q[0], q[1], t[1]])}" fill="#ff0" fill-opacity=".12"/>`;
+    o += `<line x1="${X(m.anchor.x)}" y1="${Y(m.anchor.y)}" x2="${X(mx.x)}" y2="${Y(mx.y)}" stroke="#ff0" stroke-dasharray="3 3"/>`;
+    o += `<line x1="${X(m.anchor.x)}" y1="${Y(m.anchor.y)}" x2="${X(rest.x)}" y2="${Y(rest.y)}" stroke="#fff" stroke-width="2"/>`;
+    o += `<circle cx="${X(rest.x)}" cy="${Y(rest.y)}" r="${m.size * S}" fill="#a0f" stroke="#fff"/><circle cx="${X(m.anchor.x)}" cy="${Y(m.anchor.y)}" r="3" fill="#fff"/>` + lab(m.anchor, 'spider');
+  } else if (m.kind === 'octopus') {
+    o += `<circle cx="${X(m.center.x)}" cy="${Y(m.center.y)}" r="${m.reach * S}" fill="#f0a" fill-opacity=".08" stroke="#f0a" stroke-dasharray="4 3"/>`;
+    o += `<circle cx="${X(m.center.x)}" cy="${Y(m.center.y)}" r="${m.bodyRadius * S}" fill="#c3a" stroke="#fff"/>`;
+    const hx = m.center.x + Math.cos(m.facing) * m.bodyRadius, hy = m.center.y + Math.sin(m.facing) * m.bodyRadius;
+    o += `<circle cx="${X(hx)}" cy="${Y(hy)}" r="4" fill="#fff"/>` + lab(m.center, 'octopus');
+  } else if (m.kind === 'fish') {
+    o += `<line x1="${X(m.a.x)}" y1="${Y(m.a.y)}" x2="${X(m.b.x)}" y2="${Y(m.b.y)}" stroke="#4fd" stroke-width="2"/>`;
+    o += `<circle cx="${X(m.a.x)}" cy="${Y(m.a.y)}" r="${m.size * S}" fill="#4fd" fill-opacity=".5"/><circle cx="${X(m.b.x)}" cy="${Y(m.b.y)}" r="${m.size * S}" fill="none" stroke="#4fd"/>` + lab(m.a, 'fish');
+  } else {
+    for (const q of m.passes) o += `<line x1="${X(q.a.x)}" y1="${Y(q.a.y)}" x2="${X(q.b.x)}" y2="${Y(q.b.y)}" stroke="#7f4" stroke-width="2"/><circle cx="${X(q.a.x)}" cy="${Y(q.a.y)}" r="${m.size * S}" fill="#7f4" fill-opacity=".4"/><circle cx="${X(q.b.x)}" cy="${Y(q.b.y)}" r="${m.size * S}" fill="none" stroke="#7f4"/>`;
+    o += lab(m.passes[0].a, 'snake');
+  }
 }
 for (const p of map.start.spawnPoints) o += `<circle cx="${X(p.x)}" cy="${Y(p.y)}" r="${cfg.marbles.radius * S}" fill="#fff" fill-opacity=".7"/>`;
 o += `<line x1="${X(map.finish.a.x)}" y1="${Y(map.finish.a.y)}" x2="${X(map.finish.b.x)}" y2="${Y(map.finish.b.y)}" stroke="#0f0" stroke-width="3"/>`;

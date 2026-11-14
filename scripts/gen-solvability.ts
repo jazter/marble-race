@@ -9,6 +9,7 @@ const to = Number(process.argv[3] ?? 30);
 const cfg = defaultConfig();
 cfg.physics.gravityAngle = Number(process.argv[4] ?? 0);
 cfg.marbles.count = Number(process.argv[5] ?? 20);
+if (process.argv[6] !== undefined) cfg.monsters.count = Number(process.argv[6]);
 let pass = 0;
 const reasons: Record<string, number> = {};
 const times: number[] = [];

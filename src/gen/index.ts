@@ -6,8 +6,20 @@
 import type { GameConfig } from '../core/config';
 import { DEG, cumulativeLengths, dirFromAngle, rotate } from '../core/math';
 import { Rng } from '../core/rng';
-import type { LocalShape, MapDef, Mechanism, StaticShape, Vec } from '../core/types';
+import type { MapDef, Monster, StaticShape, Vec } from '../core/types';
 import { LIBRARY, maybeSwitch, type SegmentDef } from './segments';
+import {
+  MONSTER_SEED_SALT,
+  type SegRec,
+  buildOctopusArena,
+  buildSnakePit,
+  makeWorld,
+  mechReach,
+  monsterY,
+  placeMonsters,
+  planArenas,
+  planKinds,
+} from './monsters';
 import { BOUNDARY_THICK, type Ctx, chicane, extend, makeCtx, nid, pathTo, addWall } from './util';
 
 const THEMES = [
@@ -139,22 +151,6 @@ function pickRegroup(ctx: Ctx, prev: string | null): SegmentDef | null {
   return pool[Math.floor(ctx.rng.next() * pool.length)];
 }
 
-function mechReach(m: Mechanism): number {
-  const ext = (s: LocalShape): number => {
-    if (s.type === 'circle') return Math.hypot(s.cx, s.cy) + s.r;
-    if (s.type === 'box') return Math.hypot(s.cx, s.cy) + Math.hypot(s.hw, s.hh);
-    return Math.max(...s.points.map((p) => Math.hypot(p.x, p.y)));
-  };
-  let total = 0;
-  for (const l of m.links) {
-    let e = 0;
-    for (const s of l.shapes) e = Math.max(e, ext(s));
-    if (l.tip) e = Math.max(e, Math.hypot(l.tip.x, l.tip.y));
-    total += e;
-  }
-  return total;
-}
-
 /**
  * Segments whose outer walls stay lethal with a 'kill' boundary. Ramp-based
  * segments (zigzag, funnel, switch, pads), the start box, chicanes and the
@@ -219,6 +215,12 @@ export function generateMap(config: GameConfig, seed: number): MapDef {
   const nSeg = Math.max(0, Math.floor(config.map.segments));
   const regroupAt = planRegroups(config.map.regroups ?? 0, nSeg);
   let lastRegroup: string | null = null;
+  // monsters: separate Rng so the rest of the course never depends on monster settings
+  const mrng = new Rng((seed ^ MONSTER_SEED_SALT) >>> 0);
+  const monsterKinds = planKinds(config, mrng);
+  const arenas = planArenas(monsterKinds, nSeg, mrng);
+  const segRecs: SegRec[] = [];
+  const fixedMonsters: Monster[] = [];
   for (let i = 0; i < nSeg; i++) {
     let def: SegmentDef | null = regroupAt.has(i) ? pickRegroup(ctx, lastRegroup) : null;
     if (def) lastRegroup = def.type;
@@ -228,8 +230,17 @@ export function generateMap(config: GameConfig, seed: number): MapDef {
     const segStartY = ctx.y;
     def.run(ctx);
     if (!def.ownSwitch) maybeSwitch(ctx, false);
+    segRecs.push({ type: def.type, y0: segStartY, y1: ctx.y, regroup: !!def.regroup });
     if (LETHAL_SIDE_SEGMENTS.has(def.type)) lethalRanges.push([segStartY, ctx.y, BOUNCY_SEGMENTS.has(def.type) ? 1 : 0]);
     prev = def.type;
+    for (const ak of arenas.get(i) ?? []) {
+      marks.push({ type: ak === 'octopus' ? 'octopus' : 'snakePit', idx: ctx.path.length - 1 });
+      if (ak === 'octopus') {
+        const o = buildOctopusArena(ctx, mrng, 'mo');
+        segRecs.push(o.rec);
+        fixedMonsters.push(o.monster);
+      } else segRecs.push(buildSnakePit(ctx));
+    }
     if (i < nSeg - 1 && rng.bool(0.5)) {
       let dx = rng.range(2, 4.5) * rng.sign();
       if (Math.abs(ctx.cx + dx) > 6) dx = -dx;
@@ -239,6 +250,13 @@ export function generateMap(config: GameConfig, seed: number): MapDef {
   marks.push({ type: 'finish', idx: ctx.path.length - 1 });
   const finish = buildFinish(ctx);
   const endIdx = ctx.path.length - 1;
+  let monstersCanon: Monster[] = [];
+  if (monsterKinds.length > 0) {
+    const world = makeWorld(ctx, ctx.walls, ctx.gates, ctx.mechs, ctx.switches);
+    monstersCanon = placeMonsters(ctx, mrng, monsterKinds, segRecs, fixedMonsters, world)
+      .sort((a, b) => monsterY(a) - monsterY(b))
+      .map((m, k) => ({ ...m, id: `m${k + 1}` }));
+  }
   const bottomY = ctx.left[ctx.left.length - 1].y;
 
   // boundary chain: left (down), floor, right (up), lid back to start
@@ -291,6 +309,18 @@ export function generateMap(config: GameConfig, seed: number): MapDef {
     shape: z.shape.type === 'circle' ? { ...z.shape, center: rp(z.shape.center) } : { type: 'polygon' as const, points: z.shape.points.map(rp) },
   }));
   const switches = ctx.switches.map((s) => ({ ...s, position: rp(s.position), angle: s.angle + phi }));
+  const monsters = monstersCanon.map((m): Monster => {
+    switch (m.kind) {
+      case 'spider':
+        return { ...m, anchor: rp(m.anchor), down: rp(m.down) };
+      case 'octopus':
+        return { ...m, center: rp(m.center), facing: m.facing + phi };
+      case 'fish':
+        return { ...m, a: rp(m.a), b: rp(m.b) };
+      case 'snake':
+        return { ...m, passes: m.passes.map((q) => ({ a: rp(q.a), b: rp(q.b) })) };
+    }
+  });
   const spawnPoints = start.spawn.map(rp);
   const path = ctx.path.map(rp);
 
@@ -327,6 +357,7 @@ export function generateMap(config: GameConfig, seed: number): MapDef {
     mechanisms,
     zones,
     switches,
+    ...(monsters.length ? { monsters } : {}),
     start: { spawnPoints, area: start.area.map(rp) },
     finish: { a: rp(finish.a), b: rp(finish.b), sensor: finish.sensor.map(rp) },
     segments,

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { defaultConfig, type GameConfig } from '../src/core/config';
 import { dirFromAngle, dot, sub } from '../src/core/math';
 import { generateMap } from '../src/gen';
-import type { MapDef, Vec } from '../src/core/types';
+import type { MapDef, Monster, Vec } from '../src/core/types';
 
 const cfgWith = (f: (c: GameConfig) => void): GameConfig => {
   const c = defaultConfig();
@@ -117,7 +117,7 @@ describe('generator', () => {
   it('honours segment count', () => {
     for (const n of [0, 1, 5, 12]) {
       const m = generateMap(cfgWith((c) => (c.map.segments = n)), 2);
-      expect(m.segments.filter((s) => s.type !== 'start' && s.type !== 'finish').length).toBe(n);
+      expect(m.segments.filter((s) => s.type !== 'start' && s.type !== 'finish' && s.type !== 'octopus' && s.type !== 'snakePit').length).toBe(n);
     }
   });
 
@@ -197,7 +197,7 @@ describe('kill boundary', () => {
         const m = generateMap(cfgWith((c) => ((c.map.segments = 8), (c.map.regroups = n))), seed);
         const regs = m.segments.filter((s) => isRegroup(s.type));
         expect(regs.length).toBe(n);
-        expect(m.segments.filter((s) => s.type !== 'start' && s.type !== 'finish').length).toBe(8);
+        expect(m.segments.filter((s) => s.type !== 'start' && s.type !== 'finish' && s.type !== 'octopus' && s.type !== 'snakePit').length).toBe(8);
         expect(isRegroup(m.segments[1].type)).toBe(false);
         expect(m.mechanisms.filter((x) => x.id.startsWith('regroup') && x.effect === null).length).toBe(n);
       }
@@ -213,5 +213,103 @@ describe('kill boundary', () => {
       const c = cfgWith((x) => (x.map.regroups = 3));
       expect(JSON.stringify(generateMap(c, 11))).toBe(JSON.stringify(generateMap(c, 11)));
     });
+  });
+});
+
+function monsterPoints(m: Monster): Vec[] {
+  switch (m.kind) {
+    case 'spider':
+      return [m.anchor, { x: m.anchor.x + m.down.x * m.restLength, y: m.anchor.y + m.down.y * m.restLength }, { x: m.anchor.x + m.down.x * m.maxLength, y: m.anchor.y + m.down.y * m.maxLength }];
+    case 'octopus':
+      return [m.center];
+    case 'fish':
+      return [m.a, m.b];
+    case 'snake':
+      return m.passes.flatMap((p) => [p.a, p.b]);
+  }
+}
+
+function clearance(map: MapDef, p: Vec): number {
+  let d = Infinity;
+  const seg = (a: Vec, b: Vec): number => {
+    const dx = b.x - a.x, dy = b.y - a.y;
+    const l2 = dx * dx + dy * dy;
+    const t = l2 < 1e-12 ? 0 : Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / l2));
+    return Math.hypot(p.x - a.x - dx * t, p.y - a.y - dy * t);
+  };
+  for (const w of map.walls) {
+    const s = w.shape;
+    if (s.type === 'circle') d = Math.min(d, Math.hypot(p.x - s.center.x, p.y - s.center.y) - s.radius);
+    else if (s.type === 'polyline') for (let i = 0; i < s.points.length - 1; i++) d = Math.min(d, seg(s.points[i], s.points[i + 1]) - s.thickness / 2);
+  }
+  return d;
+}
+
+describe('monsters', () => {
+  const withM = (count: number, kinds?: Partial<Record<'spider' | 'octopus' | 'fish' | 'snake', boolean>>, ga = 0) =>
+    cfgWith((c) => {
+      c.monsters.count = count;
+      c.physics.gravityAngle = ga;
+      if (kinds) c.monsters.kinds = { spider: false, octopus: false, fish: false, snake: false, ...kinds };
+    });
+
+  it('honours the count (0, 1, 3, 8)', () => {
+    // spider/fish need a free regular segment each (cap = free segments); octopus/snake add their own segments
+    for (const n of [0, 1, 3, 8])
+      for (let seed = 1; seed <= 10; seed++) expect((generateMap(withM(n), seed).monsters ?? []).length).toBe(n);
+  });
+
+  it('is 0 when no kind is enabled and uses only enabled kinds, varied', () => {
+    expect(generateMap(withM(4, {}), 3).monsters ?? []).toEqual([]);
+    for (let seed = 1; seed <= 10; seed++) {
+      for (const m of generateMap(withM(5, { fish: true, snake: true }), seed).monsters ?? []) expect(['fish', 'snake']).toContain(m.kind);
+      const four = (generateMap(withM(4), seed).monsters ?? []).map((m) => m.kind);
+      expect(new Set(four).size).toBe(4);
+    }
+  });
+
+  it('is deterministic', () => {
+    expect(JSON.stringify(generateMap(withM(5), 9))).toBe(JSON.stringify(generateMap(withM(5), 9)));
+  });
+
+  it('monsters off leaves the map unchanged', () => {
+    for (let seed = 1; seed <= 8; seed++) {
+      const off = generateMap(withM(0), seed);
+      const none = generateMap(withM(3, {}), seed);
+      expect(JSON.stringify(none)).toBe(JSON.stringify(off));
+      expect(off.monsters).toBeUndefined();
+      // spider / fish only: course geometry identical, only monsters added
+      const sf = generateMap(withM(2, { spider: true, fish: true }), seed);
+      expect(JSON.stringify({ ...sf, monsters: undefined })).toBe(JSON.stringify(off));
+    }
+  });
+
+  it('keeps every monster point in free space inside the bounds', () => {
+    for (const ga of [0, 35, -90])
+      for (let seed = 1; seed <= 10; seed++) {
+        const m = generateMap(withM(6, undefined, ga), seed);
+        for (const mo of m.monsters ?? []) {
+          for (const p of monsterPoints(mo)) {
+            expect(p.x).toBeGreaterThan(m.bounds.minX);
+            expect(p.x).toBeLessThan(m.bounds.maxX);
+            expect(p.y).toBeGreaterThan(m.bounds.minY);
+            expect(p.y).toBeLessThan(m.bounds.maxY);
+            const need = mo.kind === 'octopus' ? mo.bodyRadius : mo.kind === 'spider' ? mo.size : mo.size;
+            expect(clearance(m, p)).toBeGreaterThan(need);
+          }
+        }
+      }
+  });
+
+  it('rotates with gravity (spider down = flowDir, octopus head up)', () => {
+    const m = generateMap(withM(4, { spider: true }, 45), 4);
+    for (const mo of m.monsters ?? []) {
+      if (mo.kind !== 'spider') continue;
+      expect(mo.down.x).toBeCloseTo(m.flowDir.x, 6);
+      expect(mo.down.y).toBeCloseTo(m.flowDir.y, 6);
+    }
+    const o = generateMap(withM(1, { octopus: true }, 45), 4).monsters![0];
+    if (o.kind !== 'octopus') throw new Error('expected octopus');
+    expect(Math.cos(o.facing) * m.flowDir.x + Math.sin(o.facing) * m.flowDir.y).toBeCloseTo(-1, 6);
   });
 });
