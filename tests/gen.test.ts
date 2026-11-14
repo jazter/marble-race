@@ -132,6 +132,7 @@ describe('generator', () => {
       const m = generateMap(c, seed);
       for (const mech of m.mechanisms) {
         expect(['propeller', 'triangle']).toContain(mech.kind);
+        if (mech.id.startsWith('regroup')) continue;
         expect(['grow', 'repel']).toContain(mech.effect);
       }
       for (const z of m.zones) expect(['grow', 'repel']).toContain(z.effect);
@@ -187,5 +188,30 @@ describe('kill boundary', () => {
       expect(kill.mechanisms).toEqual(solid.mechanisms);
       expect(kill.path).toEqual(solid.path);
     }
+  });
+
+  describe('regroup segments', () => {
+    const isRegroup = (t: string): boolean => t === 'funnelGate' || t === 'rotorChamber';
+    it.each([0, 1, 2, 4])('honours map.regroups = %i (8 segments)', (n) => {
+      for (let seed = 1; seed <= 6; seed++) {
+        const m = generateMap(cfgWith((c) => ((c.map.segments = 8), (c.map.regroups = n))), seed);
+        const regs = m.segments.filter((s) => isRegroup(s.type));
+        expect(regs.length).toBe(n);
+        expect(m.segments.filter((s) => s.type !== 'start' && s.type !== 'finish').length).toBe(8);
+        expect(isRegroup(m.segments[1].type)).toBe(false);
+        expect(m.mechanisms.filter((x) => x.id.startsWith('regroup') && x.effect === null).length).toBe(n);
+      }
+    });
+    it('clamps to segments - 1 and is absent without propellers', () => {
+      const a = generateMap(cfgWith((c) => ((c.map.segments = 3), (c.map.regroups = 4))), 2);
+      expect(a.segments.filter((s) => isRegroup(s.type)).length).toBe(2);
+      const b = generateMap(cfgWith((c) => ((c.map.regroups = 4), (c.objects.kinds.propeller = false))), 2);
+      expect(b.segments.filter((s) => isRegroup(s.type)).length).toBe(0);
+      expect(b.mechanisms.some((x) => x.id.startsWith('regroup'))).toBe(false);
+    });
+    it('is deterministic with regroups', () => {
+      const c = cfgWith((x) => (x.map.regroups = 3));
+      expect(JSON.stringify(generateMap(c, 11))).toBe(JSON.stringify(generateMap(c, 11)));
+    });
   });
 });

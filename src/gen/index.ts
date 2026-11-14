@@ -103,13 +103,40 @@ function buildFinish(ctx: Ctx): MapDef['finish'] {
 }
 
 function pickSegment(ctx: Ctx, prev: string | null, first: boolean): SegmentDef {
-  let cands = LIBRARY.filter((d) => d.available(ctx) && d.type !== prev);
+  let cands = LIBRARY.filter((d) => !d.regroup && d.available(ctx) && d.type !== prev);
   if (first) {
     const soft = cands.filter((d) => d.type === 'zigzag' || d.type === 'funnel' || d.type === 'pegs');
     if (soft.length) cands = soft;
   }
   if (cands.length === 0) cands = LIBRARY.filter((d) => d.type === 'zigzag');
   return ctx.rng.weighted(cands, cands.map((d) => d.weight));
+}
+
+/** 0-based segment indices (never 0) that become regroup segments, spread over the course. */
+export function planRegroups(count: number, nSeg: number): Set<number> {
+  const k = Math.max(0, Math.min(Math.floor(count), nSeg - 1));
+  const out = new Set<number>();
+  for (let j = 0; j < k; j++) {
+    let idx = Math.round(((j + 1) / (k + 1)) * nSeg);
+    idx = Math.min(Math.max(idx, 1), nSeg - 1);
+    // resolve collisions: nearest free slot (prefer later)
+    for (let d = 0; out.has(idx) && d < nSeg; d++) {
+      const c = idx + d;
+      const b = idx - d;
+      if (c <= nSeg - 1 && !out.has(c)) idx = c;
+      else if (b >= 1 && !out.has(b)) idx = b;
+    }
+    out.add(idx);
+  }
+  return out;
+}
+
+function pickRegroup(ctx: Ctx, prev: string | null): SegmentDef | null {
+  const c = LIBRARY.filter((d) => d.regroup && d.available(ctx));
+  if (c.length === 0) return null;
+  const alt = c.filter((d) => d.type !== prev);
+  const pool = alt.length ? alt : c;
+  return pool[Math.floor(ctx.rng.next() * pool.length)];
 }
 
 function mechReach(m: Mechanism): number {
@@ -190,8 +217,12 @@ export function generateMap(config: GameConfig, seed: number): MapDef {
   /** Canonical y-ranges of obstacle segments that may get lethal outer walls (walls.boundary === 'kill'). */
   const lethalRanges: [number, number, number][] = [];
   const nSeg = Math.max(0, Math.floor(config.map.segments));
+  const regroupAt = planRegroups(config.map.regroups ?? 0, nSeg);
+  let lastRegroup: string | null = null;
   for (let i = 0; i < nSeg; i++) {
-    const def = pickSegment(ctx, prev, i === 0);
+    let def: SegmentDef | null = regroupAt.has(i) ? pickRegroup(ctx, lastRegroup) : null;
+    if (def) lastRegroup = def.type;
+    else def = pickSegment(ctx, prev, i === 0);
     marks.push({ type: def.type, idx: ctx.path.length - 1 });
     ctx.ramps = [];
     const segStartY = ctx.y;

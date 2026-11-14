@@ -36,7 +36,9 @@ export type SegmentType =
   | 'triangles'
   | 'hammers'
   | 'pads'
-  | 'switch';
+  | 'switch'
+  | 'funnelGate'
+  | 'rotorChamber';
 
 const finishSeg = (ctx: Ctx, yEnd: number): void => {
   extend(ctx, yEnd);
@@ -500,6 +502,135 @@ function switchSeg(ctx: Ctx): void {
   maybeSwitch(ctx, true);
 }
 
+
+/* ------------------------------------------------------ regroup segments */
+
+const RING_T = 0.4;
+/** Blade-tip to ring-wall clearance: well below the smallest marble diameter (2·r·minScale). */
+const TIP_GAP = 0.2;
+
+const arcPts = (cx: number, cy: number, rho: number, a0: number, a1: number): Vec[] => {
+  const n = Math.max(2, Math.ceil(Math.abs(a1 - a0) / 9));
+  const out: Vec[] = [];
+  for (let i = 0; i <= n; i++) {
+    const a = (a0 + ((a1 - a0) * i) / n) * DEG;
+    out.push({ x: cx + rho * Math.cos(a), y: cy + rho * Math.sin(a) });
+  }
+  return out;
+};
+
+/** Polyline wall pieces of at most 10 points that share end points. */
+function addChain(ctx: Ctx, pts: Vec[], style: 'ramp' | 'wall'): void {
+  const CH = 10;
+  for (let i = 0; i < pts.length - 1; i += CH - 1) {
+    const piece = pts.slice(i, Math.min(pts.length, i + CH));
+    if (piece.length >= 2) addWall(ctx, { type: 'polyline', thickness: RING_T, points: piece }, style, { reaction: 'solid' });
+  }
+}
+
+/** Free end of a wall: round it so marbles never catch on the square edge. */
+function capEnd(ctx: Ctx, p: Vec): void {
+  addWall(ctx, { type: 'circle', center: p, radius: RING_T / 2 }, 'wall', { reaction: 'solid' });
+}
+
+function regroupSpeed(ctx: Ctx): number {
+  return (0.5 + 0.5 * ctx.diff) * ctx.rng.range(0.9, 1.1);
+}
+
+function addRotor(ctx: Ctx, x: number, y: number, L: number, blades: number, speed: number): void {
+  ctx.mechs.push({
+    id: nid(ctx, 'regroup'),
+    kind: 'propeller',
+    pivot: { x, y },
+    links: [{ shapes: propellerShapes(blades, L, 0.4), motion: { type: 'rotate', speed, phase: ctx.rng.range(0, Math.PI * 2) } }],
+    effect: null,
+  });
+}
+
+function regroupAvailable(ctx: Ctx): boolean {
+  return kindEnabled(ctx, 'propeller') && ctx.hw >= 3.4 && ctx.R <= 1.5;
+}
+
+interface RingOpts {
+  /** ring centre-line radius */
+  rho: number;
+  /** half angle (deg) of the top opening, measured from straight up */
+  e: number;
+  /** slope (deg from horizontal) of the funnel walls feeding the opening */
+  slope: number;
+  /** on-screen angles (deg, y down: 90 = bottom) where the left / right arcs stop (exit gap in between) */
+  leftEnd: number;
+  rightEnd: number;
+  blades: number;
+  speed: number;
+}
+
+/**
+ * Round chamber + funnel walls into its top opening + centred propeller (tip clearance TIP_GAP to
+ * the ring). Returns the centre y.
+ */
+function rotorRing(ctx: Ctx, o: RingOpts): number {
+  const { cx, hw } = ctx;
+  const { rho, e } = o;
+  const top = ctx.y + 1.2;
+  const xl = cx - hw - 0.2;
+  const xr = cx + hw + 0.2;
+  const lipDx = rho * Math.sin(e * DEG);
+  const lipY = top + (cx - lipDx - xl) * Math.tan(o.slope * DEG);
+  const cy = lipY + rho * Math.cos(e * DEG);
+  const left = [{ x: xl, y: top }, ...arcPts(cx, cy, rho, 270 - e, o.leftEnd)];
+  const right = [{ x: xr, y: top }, ...arcPts(cx, cy, rho, 270 + e, o.rightEnd)];
+  addChain(ctx, left, 'ramp');
+  addChain(ctx, right, 'ramp');
+  capEnd(ctx, left[left.length - 1]);
+  capEnd(ctx, right[right.length - 1]);
+  const L = rho - RING_T / 2 - TIP_GAP;
+  addRotor(ctx, cx, cy, L, o.blades, o.speed);
+  pathTo(ctx, cx, top);
+  pathTo(ctx, cx, cy);
+  return cy;
+}
+
+/** 2 blades (one bar, two big half-disc pockets) most of the time, sometimes 3. */
+const regroupBlades = (ctx: Ctx): number => (ctx.rng.bool(0.7) ? 2 : 3);
+
+/**
+ * Embudo con hélice: a V funnel whose neck is a rotary valve. Wide V walls open into a round
+ * chamber (mouth +-58..68 deg from the top) with the propeller at its centre; marbles pile up on
+ * the blades while the neck is blocked and drop out in batches through a bottom-centre opening
+ * (about 1.4 m wider than the biggest marble).
+ */
+function funnelGate(ctx: Ctx): void {
+  const { hw, rng } = ctx;
+  const rho = clamp(rng.range(3.0, 3.5), 2.4, hw - 0.6);
+  const e = rng.range(58, 68);
+  const exitHalf = (Math.asin(clamp((ctx.R + 0.7) / rho, 0, 0.95)) * 180) / Math.PI;
+  const blades = regroupBlades(ctx);
+  const cy = rotorRing(ctx, { rho, e, slope: rng.range(36, 42), leftEnd: 90 + exitHalf, rightEnd: 450 - exitHalf, blades, speed: rng.sign() * regroupSpeed(ctx) });
+  finishSeg(ctx, cy + rho + 2.8);
+}
+
+/**
+ * Círculo con hélice: a rotary airlock. Steep funnel into a top opening, propeller at the centre,
+ * exit opening low on one side (marbles must be carried round), then out and back to the corridor.
+ */
+function rotorChamber(ctx: Ctx): void {
+  const { cx, hw, rng } = ctx;
+  const rho = clamp(rng.range(3.4, 4.0), 2.4, hw - 0.6);
+  const side = rng.sign(); // exit on this side (+1 = left)
+  const e = rng.range(34, 40);
+  // exit gap: about 1 m wider than the biggest marble, starting past the lowest point
+  const gapNear = 100;
+  const gapFar = gapNear + (2 * Math.asin(clamp((ctx.R + 0.5) / rho, 0, 0.95)) * 180) / Math.PI;
+  const leftEnd = side > 0 ? gapFar : 180 - gapNear;
+  const rightEnd = side > 0 ? 360 + gapNear : 360 + (180 - gapFar);
+  const blades = regroupBlades(ctx);
+  // clockwise for an exit on the left (anticlockwise mirrored): blades sweep the floor toward the exit
+  const cy = rotorRing(ctx, { rho, e, slope: rng.range(44, 52), leftEnd, rightEnd, blades, speed: side * regroupSpeed(ctx) * 0.75 });
+  pathTo(ctx, cx - side * rho * 0.3, cy + rho * 0.9);
+  finishSeg(ctx, cy + rho + 2.8);
+}
+
 /* ---------------------------------------------------------------- library */
 
 export interface SegmentDef {
@@ -509,6 +640,8 @@ export interface SegmentDef {
   available: (ctx: Ctx) => boolean;
   /** True if the segment builds its own switch (don't add another). */
   ownSwitch?: boolean;
+  /** Regroup segment: only placed by the generator's regroup planner, never picked randomly. */
+  regroup?: boolean;
 }
 
 const anyEffectZone = (ctx: Ctx): boolean => Object.values(ctx.cfg.objects.effects).some(Boolean);
@@ -535,4 +668,6 @@ export const LIBRARY: SegmentDef[] = [
     available: (c) => c.cfg.switches.enabled && Object.values(c.cfg.switches.actions).some(Boolean),
     ownSwitch: true,
   },
+  { type: 'funnelGate', weight: 1, run: funnelGate, available: regroupAvailable, regroup: true },
+  { type: 'rotorChamber', weight: 1, run: rotorChamber, available: regroupAvailable, regroup: true },
 ];
