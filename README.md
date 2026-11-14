@@ -70,7 +70,8 @@ Todas las opciones están en el panel lateral (⚙ en móvil). *Restablecer valo
 | Opción | Por defecto |
 |---|---|
 | Tipos de monstruo | Araña, pulpo, pez, serpiente (todos) |
-| Cantidad por mapa | 3 (0–8; con 0 no hay monstruos) |
+| Grupos por mapa | 5 (0–8; con 0 no hay monstruos) |
+| Tamaño de grupo | hasta 4 (1–6): colonias de arañas, bancos de peces y nidos de serpientes; el pulpo va solo |
 | Probabilidad de devorar | 40 % (si no devora, suelta a la canica) |
 | Tiempo atrapada | 2 s (0.5–6 s) |
 | Velocidad | 1× (0.25–3×) |

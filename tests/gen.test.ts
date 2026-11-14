@@ -255,10 +255,74 @@ describe('monsters', () => {
       if (kinds) c.monsters.kinds = { spider: false, octopus: false, fish: false, snake: false, ...kinds };
     });
 
-  it('honours the count (0, 1, 3, 8)', () => {
+  it('honours the group count (0, 1, 3, 8) with groupSize 1', () => {
     // spider/fish need a free regular segment each (cap = free segments); octopus/snake add their own segments
     for (const n of [0, 1, 3, 8])
-      for (let seed = 1; seed <= 10; seed++) expect((generateMap(withM(n), seed).monsters ?? []).length).toBe(n);
+      for (let seed = 1; seed <= 10; seed++) {
+        const c = withM(n);
+        c.monsters.groupSize = 1;
+        expect((generateMap(c, seed).monsters ?? []).length).toBe(n);
+      }
+  });
+
+  it('groups have between ceil(g/2) and g members (octopus alone)', () => {
+    for (const g of [1, 4, 6])
+      for (const kind of ['spider', 'fish', 'snake'] as const)
+        for (let seed = 1; seed <= 10; seed++) {
+          const c = withM(1, { [kind]: true });
+          c.monsters.groupSize = g;
+          const ms = generateMap(c, seed).monsters ?? [];
+          expect(ms.length).toBeGreaterThanOrEqual(1);
+          expect(ms.length).toBeLessThanOrEqual(g);
+          if (g === 1) expect(ms.length).toBe(1);
+          for (const m of ms) expect(m.kind).toBe(kind);
+          expect(new Set(ms.map((m) => m.id)).size).toBe(ms.length);
+        }
+    for (let seed = 1; seed <= 5; seed++) expect((generateMap(withM(1, { octopus: true }), seed).monsters ?? []).length).toBe(1);
+  });
+
+  it('fish schools share span/speed/rest on distinct lanes', () => {
+    let multi = 0;
+    for (let seed = 1; seed <= 15; seed++) {
+      const c = withM(1, { fish: true });
+      c.monsters.groupSize = 4;
+      const fs = (generateMap(c, seed).monsters ?? []).filter((m) => m.kind === 'fish');
+      if (fs.length > 1) multi++;
+      for (const f of fs) {
+        if (f.kind !== 'fish') continue;
+        const l = fs[0];
+        if (l.kind !== 'fish') continue;
+        expect(f.speed).toBe(l.speed);
+        expect(f.rest).toBe(l.rest);
+        expect(f.a.x).toBe(l.a.x);
+        expect(f.b.x).toBe(l.b.x);
+      }
+      const lanes = fs.map((f) => (f.kind === 'fish' ? f.a.y : 0));
+      expect(new Set(lanes.map((y) => y.toFixed(3))).size).toBe(fs.length);
+    }
+    expect(multi).toBeGreaterThan(0);
+  });
+
+  it('spider colony anchors are at least 2 * huntWidth apart', () => {
+    for (let seed = 1; seed <= 15; seed++) {
+      const c = withM(1, { spider: true });
+      c.monsters.groupSize = 4;
+      const ss = (generateMap(c, seed).monsters ?? []).flatMap((m) => (m.kind === 'spider' ? [m] : []));
+      for (let i = 0; i < ss.length; i++)
+        for (let j = i + 1; j < ss.length; j++) {
+          const dx = Math.abs(ss[i].anchor.x - ss[j].anchor.x);
+          expect(dx).toBeGreaterThanOrEqual(2 * Math.max(ss[i].huntWidth, ss[j].huntWidth));
+        }
+    }
+  });
+
+  it('snake nests share the passes', () => {
+    for (let seed = 1; seed <= 10; seed++) {
+      const c = withM(1, { snake: true });
+      c.monsters.groupSize = 4;
+      const ns = (generateMap(c, seed).monsters ?? []).flatMap((m) => (m.kind === 'snake' ? [m] : []));
+      for (const n of ns) expect(n.passes).toEqual(ns[0].passes);
+    }
   });
 
   it('is 0 when no kind is enabled and uses only enabled kinds, varied', () => {

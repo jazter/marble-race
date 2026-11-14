@@ -116,8 +116,11 @@ export interface GameConfig {
 
   monsters: {
     kinds: Record<MonsterKind, boolean>;
-    /** Monsters per map (0..8). */
+    /** Monster GROUPS per map (0..8). Octopuses come alone; spiders, fish and
+     *  snakes come in groups (colony / school / nest) of up to `groupSize`. */
     count: number;
+    /** Max members of a spider / fish / snake group (1..6). */
+    groupSize: number;
     /** 0..1 probability that a monster devours (destroys) a caught marble instead of releasing it. */
     destroyChance: number;
     /** Seconds a monster holds a caught marble before deciding. */
@@ -219,7 +222,8 @@ export function defaultConfig(): GameConfig {
     },
     monsters: {
       kinds: { spider: true, octopus: true, fish: true, snake: true },
-      count: 3,
+      count: 5,
+      groupSize: 4,
       destroyChance: 0.4,
       holdTime: 2,
       speed: 1,

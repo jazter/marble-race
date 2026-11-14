@@ -218,7 +218,7 @@ export function buildSnakePit(ctx: Ctx): SegRec {
 
 /* ------------------------------------------------------------ placement */
 
-function placeSnake(ctx: Ctx, world: World, rec: SegRec, rng: Rng, id: string): Monster | null {
+function placeSnake(ctx: Ctx, world: World, rec: SegRec, rng: Rng, id: string, k = 1): Monster[] {
   const size = rng.range(0.4, 0.5);
   const margin = size + ctx.R;
   const n = rng.int(4, 6);
@@ -251,11 +251,31 @@ function placeSnake(ctx: Ctx, world: World, rec: SegRec, rng: Rng, id: string): 
       break;
     }
   }
-  if (passes.length < 4) return null;
-  return { id, kind: 'snake', passes, length: rng.range(3, 5), speed: rng.range(2.5, 4), rest: rng.range(1, 2.5), phase: rng.range(0, 2), size };
+  if (passes.length < 4) return [];
+  // nest: every member shares the pit and its passes; phases are spread over the pass + rest cycle
+  const rest = rng.range(1, 2.5);
+  const speed = rng.range(2.5, 4);
+  const length = rng.range(3, 5);
+  const phase0 = rng.range(0, 2);
+  const cycle = rest + (length + 8) / speed;
+  const out: Monster[] = [];
+  for (let i = 0; i < k; i++) {
+    const v = i === 0 ? 0 : 1;
+    out.push({
+      id: i === 0 ? id : `${id}${String.fromCharCode(97 + i)}`,
+      kind: 'snake',
+      passes: passes.map((p) => ({ a: { ...p.a }, b: { ...p.b } })),
+      length: length * (1 + v * rng.range(-0.15, 0.15)),
+      speed: speed * (1 + v * rng.range(-0.12, 0.12)),
+      rest: rest * (1 + v * rng.range(-0.15, 0.15)),
+      phase: phase0 + (i * cycle) / k + v * rng.range(0, 0.4),
+      size: size * (1 + v * rng.range(-0.1, 0.1)),
+    });
+  }
+  return out;
 }
 
-function placeSpider(world: World, rec: SegRec, rng: Rng, id: string): Monster | null {
+function placeSpider(world: World, rec: SegRec, rng: Rng, id: string, k = 1): Monster[] {
   // The spider drops fast, so it hangs above a ramp where marbles roll / slow down and
   // stops with its body about one marble diameter above that surface.
   const size = rng.range(0.55, 0.7);
@@ -275,11 +295,11 @@ function placeSpider(world: World, rec: SegRec, rng: Rng, id: string): Monster |
       cands.push({ p, len: t });
     }
   }
-  if (cands.length === 0) return null;
+  if (cands.length === 0) return [];
   const good = cands.filter((c) => c.len >= 4);
   const pool = good.length ? good : cands;
   const pick = pool[Math.floor(rng.next() * pool.length)];
-  return {
+  const leader: Monster = {
     id,
     kind: 'spider',
     anchor: pick.p,
@@ -289,9 +309,35 @@ function placeSpider(world: World, rec: SegRec, rng: Rng, id: string): Monster |
     huntWidth: rng.range(1, 1.6),
     size,
   };
+  const out: Monster[] = [leader];
+  const hws: number[] = [leader.huntWidth];
+  // colony: hang side by side over the same ramp, columns never overlapping
+  const picks = [pick];
+  for (let i = 1; i < k; i++) {
+    const hw = rng.range(1, 1.6);
+    const ok = (c: { p: Vec }): boolean => picks.every((q, j) => Math.abs(c.p.x - q.p.x) >= 2 * Math.max(hw, hws[j]) + 0.1);
+    const near = cands.filter((c) => ok(c) && Math.abs(c.p.y - pick.p.y) <= 3 && c.len >= 3);
+    const alt = near.length ? near : cands.filter((c) => ok(c) && Math.abs(c.p.y - pick.p.y) <= 6);
+    if (alt.length === 0) break;
+    const c = alt[Math.floor(rng.next() * alt.length)];
+    picks.push(c);
+    hws.push(hw);
+    const rl = Math.min(restLength * rng.range(0.7, 1.3), c.len - 1.5);
+    out.push({
+      id: `${id}${String.fromCharCode(97 + i)}`,
+      kind: 'spider',
+      anchor: c.p,
+      down: { x: 0, y: 1 },
+      restLength: Math.max(0.8, rl),
+      maxLength: c.len,
+      huntWidth: hw,
+      size: size * rng.range(0.88, 1.12),
+    });
+  }
+  return out;
 }
 
-function placeFish(ctx: Ctx, world: World, rec: SegRec, rng: Rng, id: string): Monster | null {
+function placeFish(ctx: Ctx, world: World, rec: SegRec, rng: Rng, id: string, k = 1): Monster[] {
   const size = rng.range(0.6, 0.8);
   for (const margin of [size + ctx.R, size + ctx.r]) {
     const ys: number[] = [];
@@ -305,20 +351,74 @@ function placeFish(ctx: Ctx, world: World, rec: SegRec, rng: Rng, id: string): M
       if (ok && world.clear({ x: bx, y }) >= margin - 0.01) ys.push(y);
     }
     if (ys.length === 0) continue;
-    const y = ys[Math.floor(rng.next() * ys.length)];
-    const c = world.corridor(y);
-    return {
-      id,
-      kind: 'fish',
-      a: { x: c.l + BH + margin + 0.1, y },
-      b: { x: c.r - BH - margin - 0.1, y },
-      speed: rng.range(3, 5),
-      rest: rng.range(1, 2.5),
-      phase: rng.range(0, 2),
-      size,
+    // prefer leader rows that leave room for the most school lanes
+    const laneYs = (y0: number, ax: number, bx: number, d: number): number[] => {
+      const res: number[] = [];
+      for (let t = 0; res.length < k - 1 && t < 2 * k + 2; t++) {
+        const ly = y0 + (t % 2 === 0 ? 1 : -1) * d * Math.ceil((t + 1) / 2);
+        if (ly < rec.y0 + 0.3 || ly > rec.y1 - 0.1) continue;
+        let fits = world.clear({ x: bx, y: ly }) >= margin - 0.01;
+        for (let x = ax; fits && x <= bx + 1e-6; x += 0.3) fits = world.clear({ x, y: ly }) >= margin - 0.01;
+        if (fits) res.push(ly);
+      }
+      return res;
     };
+    const d = rng.range(1, 1.3);
+    const score = ys.map((yy) => {
+      const cc = world.corridor(yy);
+      return laneYs(yy, cc.l + BH + margin + 0.1, cc.r - BH - margin - 0.1, d).length;
+    });
+    const best = Math.max(...score);
+    const bestYs = ys.filter((_, i) => score[i] === best);
+    const y = bestYs[Math.floor(rng.next() * bestYs.length)];
+    const c = world.corridor(y);
+    const ax = c.l + BH + margin + 0.1;
+    const bx = c.r - BH - margin - 0.1;
+    const speed = rng.range(3, 5);
+    const rest = rng.range(1, 2.5);
+    const phase0 = rng.range(0, 2);
+    const out: Monster[] = [{ id, kind: 'fish', a: { x: ax, y }, b: { x: bx, y }, speed, rest, phase: phase0, size }];
+    // school: same span / speed / rest, lanes alternating above / below the leader's
+    for (const ly of laneYs(y, ax, bx, d)) {
+      out.push({
+        id: `${id}${String.fromCharCode(96 + out.length)}`,
+        kind: 'fish',
+        a: { x: ax, y: ly },
+        b: { x: bx, y: ly },
+        speed,
+        rest,
+        phase: phase0 + rng.range(0, 0.5),
+        size: size * rng.range(0.85, 1.15),
+      });
+    }
+    // Members that found no parallel lane swim in the leader's lane, trailing it with a
+    // small sideways jitter (a school passing in a loose file) so narrow rows still get a school.
+    const jit = [0.3, -0.3, 0.15, -0.15, 0];
+    for (let j = 0; out.length < k && j < k; j++) {
+      const ly = y + jit[j % jit.length];
+      let fits = world.clear({ x: bx, y: ly }) >= margin - 0.36;
+      for (let x = ax; fits && x <= bx + 1e-6; x += 0.3) fits = world.clear({ x, y: ly }) >= margin - 0.36;
+      if (!fits) continue;
+      out.push({
+        id: `${id}${String.fromCharCode(96 + out.length)}`,
+        kind: 'fish',
+        a: { x: ax, y: ly },
+        b: { x: bx, y: ly },
+        speed,
+        rest,
+        phase: phase0 + 0.45 * (j + 1) + rng.range(0, 0.15),
+        size: size * rng.range(0.8, 1.05),
+      });
+    }
+    return out;
   }
-  return null;
+  return [];
+}
+
+/** Members of one spider / fish / snake group: seeded integer in [ceil(g/2), g]. */
+export function groupCount(ctx: Ctx, rng: Rng): number {
+  const g = Math.max(1, Math.min(6, Math.floor(ctx.cfg.monsters.groupSize ?? 1)));
+  return g === 1 ? 1 : rng.int(Math.ceil(g / 2), g);
 }
 
 /**
@@ -343,10 +443,11 @@ export function placeMonsters(ctx: Ctx, rng: Rng, kinds: MonsterKind[], recs: Se
     for (const { r } of order) {
       if (kind === 'fish' && isBoard(r)) continue;
       const id = `m${nid}`;
-      const m = kind === 'spider' ? placeSpider(world, spiderZone(r), rng, id) : placeFish(ctx, world, r, rng, id);
-      if (m) {
+      const k = groupCount(ctx, rng);
+      const ms = kind === 'spider' ? placeSpider(world, spiderZone(r), rng, id, k) : placeFish(ctx, world, r, rng, id, k);
+      if (ms.length) {
         used.add(r);
-        out.push(m);
+        out.push(...ms);
         nid++;
         break;
       }
@@ -354,9 +455,9 @@ export function placeMonsters(ctx: Ctx, rng: Rng, kinds: MonsterKind[], recs: Se
   });
   for (const r of recs) {
     if (r.arena !== 'snake') continue;
-    const m = placeSnake(ctx, world, r, rng, `m${nid}`);
-    if (m) {
-      out.push(m);
+    const ms = placeSnake(ctx, world, r, rng, `m${nid}`, groupCount(ctx, rng));
+    if (ms.length) {
+      out.push(...ms);
       nid++;
     }
   }
