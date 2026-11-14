@@ -26,3 +26,34 @@ describe('render helpers', () => {
     expect(alpha('#ffffff', 0.5)).toBe('rgba(255,255,255,0.5)');
   });
 });
+
+import { _internals as mon, monsterBounds } from '../src/render/monsters';
+import { MOCK_MONSTERS, mockFrame } from '../src/dev/mockMonsters';
+
+describe('monster rendering helpers', () => {
+  it('builds a rest state for every kind and bounds that contain it', () => {
+    for (const def of MOCK_MONSTERS) {
+      const st = mon.restState(def);
+      const b = monsterBounds(def);
+      expect(st.kind).toBe(def.kind);
+      expect(st.x).toBeGreaterThan(b.x0);
+      expect(st.x).toBeLessThan(b.x1);
+      expect(st.y).toBeGreaterThan(b.y0);
+      expect(st.y).toBeLessThan(b.y1);
+    }
+    expect(mon.restState(MOCK_MONSTERS[1]).tentacles).toHaveLength(8);
+  });
+
+  it('two-bone IK keeps bone lengths when the target is reachable', () => {
+    const r = mon.ik(0, 0, 2, 1, 1.5, 1.5, 1);
+    expect(Math.hypot(r.kx, r.ky)).toBeCloseTo(1.5);
+    expect(Math.hypot(r.ex - r.kx, r.ey - r.ky)).toBeCloseTo(1.5);
+  });
+
+  it('mock timeline stays consistent (held marbles exist)', () => {
+    for (let t = 0; t < 32; t += 0.5) {
+      const f = mockFrame(t);
+      for (const st of f.states) for (const id of st.holding) expect(f.marbles.some((m) => m.id === id)).toBe(true);
+    }
+  });
+});

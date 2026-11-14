@@ -249,3 +249,24 @@ body.is-staging .controls, body.is-staging #leaderboard, body.is-staging #hud-ch
   .stg-bar .lbl { display: none; }
   body.mode-race.is-staging #minimap { top: 8px; }
 }
+
+/* dev-only (?monsters-demo): full-bleed stage for monster screenshots */
+body.monsters-demo #panel,
+body.monsters-demo .only-mobile,
+body.monsters-demo #leaderboard { display: none !important; }
+body.monsters-demo #app { grid-template-columns: 1fr !important; }
+
+/* monsters: held / devoured marbles in the leaderboard */
+.lb-row.held .lb-info { color: #1a1204; background: #ffcc33; border-radius: 999px; padding: 0 7px; font-weight: 700; font-size: 11px; animation: heldpulse 1s ease-in-out infinite alternate; }
+.lb-row.out .lb-info { max-width: 9.5em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@keyframes heldpulse { from { filter: brightness(1); } to { filter: brightness(1.25); } }
+.lb-row.out.eaten { flex-wrap: wrap; row-gap: 0; }
+.lb-row.out.eaten .lb-info { flex: 0 0 100%; max-width: none; padding-left: 38px; font-size: 11px; margin-top: -2px; }
+
+/* Spectator-named marbles stand out in the leaderboard */
+.lb-row.named { background: linear-gradient(90deg, #ffcc3338, #ffcc3310 70%); box-shadow: inset 0 0 0 1px #ffcc3366; }
+.lb-row.named .lb-name { font-weight: 800; font-size: 13.5px; color: #ffe08a; }
+.lb-row.named .lb-name::before { content: "★ "; color: #ffcc33; }
+.lb-row.named .lb-name .nm-sub { font-weight: 500; font-size: 11px; color: #ffffff8c; }
+.lb-row.named .swatch { box-shadow: 0 0 0 2px #ffcc33, 0 0 8px #ffcc3399; }
+.lb-row.named.out { opacity: .6; }

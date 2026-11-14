@@ -65,6 +65,16 @@ Todas las opciones están en el panel lateral (⚙ en móvil). *Restablecer valo
 | Probabilidad de efecto | 60 % |
 | Zonas con efecto | Activas |
 
+**Monstruos** — criaturas que agarran canicas y, según una probabilidad, las devoran o las sueltan: la *araña* cuelga de un hilo y baja sobre la canica que tiene debajo, el *pulpo* sujeta hasta 8 canicas a la vez (una por tentáculo), el *pez* cruza nadando de izquierda a derecha y captura la canica que encuentra, y la *serpiente* atraviesa el mapa en cualquier ángulo para atrapar una.
+
+| Opción | Por defecto |
+|---|---|
+| Tipos de monstruo | Araña, pulpo, pez, serpiente (todos) |
+| Cantidad por mapa | 3 (0–8; con 0 no hay monstruos) |
+| Probabilidad de devorar | 40 % (si no devora, suelta a la canica) |
+| Tiempo atrapada | 2 s (0.5–6 s) |
+| Velocidad | 1× (0.25–3×) |
+
 **Interruptores**
 
 | Opción | Por defecto |

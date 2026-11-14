@@ -3,10 +3,11 @@
  * particles and minimap. Pure presentation — never feeds back into the sim.
  */
 import type { EffectType, GameConfig, WallReaction } from '../core/config';
-import type { LocalShape, MapDef, MarbleProfile, StaticShape, Vec, Wall } from '../core/types';
-import type { CameraState, MarbleState, MechanismPose, SimEvent, Simulation, SwitchState } from '../sim/api';
+import type { LocalShape, MapDef, MarbleProfile, Monster, StaticShape, Vec, Wall } from '../core/types';
+import type { CameraState, MarbleState, MechanismPose, MonsterState, SimEvent, Simulation, SwitchState } from '../sim/api';
 import { alpha, darken, lighten, mix } from './color';
 import { ParticleSystem, drawSkull } from './particles';
+import { MONSTER_COLORS, drawMonster, drawMonsterHint, monsterBounds, restState, type EnvMarble, type MonsterEnv } from './monsters';
 import { mechanismPoseAt } from './poses';
 import { clearSkinCache, drawMarbleSprite, skinColor } from './skins';
 
@@ -45,6 +46,10 @@ interface Item {
 }
 interface WallItem extends Item {
   wall: Wall;
+}
+interface MonsterItem extends Item {
+  def: Monster;
+  rest: MonsterState;
 }
 interface GateItem extends Item {
   id: string;
@@ -114,6 +119,8 @@ export class Renderer {
   private gates: GateItem[] = [];
   private reach: number[] = [];
   private poses0: MechanismPose[] = [];
+  private monsters: MonsterItem[] = [];
+  private bubbleAcc = 0;
   private courseBox: Box = { x0: 0, y0: 0, x1: 1, y1: 1 };
   private gateAlpha = new Map<string, number>();
   private fxLast = new Map<string, number>();
@@ -174,6 +181,7 @@ export class Renderer {
     this.walls = map.walls.map((wall) => ({ wall, box: shapeBox(wall.shape) }));
     this.gates = map.gates.map((g) => ({ id: g.id, shape: g.shape, box: shapeBox(g.shape), center: shapeCenter(g.shape) }));
     this.poses0 = map.mechanisms.map((m) => mechanismPoseAt(m, 0));
+    this.monsters = (map.monsters ?? []).map((def) => ({ def, box: monsterBounds(def), rest: restState(def) }));
     this.reach = map.mechanisms.map((m) => {
       let r = 0;
       for (const l of m.links) {
@@ -251,8 +259,8 @@ export class Renderer {
       profile: roster?.[i] ?? { id: i, name: '', skin: { type: 'solid', colors: ['#9aa6b8'] } },
     }));
     this.clock = performance.now() / 1000;
-    this.drawScene(view, this.poses0, new Set(), new Map(), placeholders.map((m) => ({ ...m, angle: 0, status: 'waiting' as const, offscreenTime: 0, progress: 0, id: m.profile.id })), null);
-    this.drawMinimap(placeholders, view.box, false);
+    this.drawScene(view, this.poses0, new Set(), new Map(), placeholders.map((m) => ({ ...m, angle: 0, status: 'waiting' as const, offscreenTime: 0, progress: 0, id: m.profile.id })), null, null);
+    this.drawMinimap(placeholders, view.box, false, undefined, null);
   }
 
   /* ------------------------------------------------------------- live */
@@ -267,7 +275,9 @@ export class Renderer {
     const view = this.stagingT > 0 ? this.blendViews(this.stagingView(camView), camView, this.stagingT) : camView;
     this.liveView = view;
     const marbles = sim.getMarbles();
+    const monsterStates = this.monsters.length ? sim.getMonsterStates() : [];
     this.handleEvents(events, marbles);
+    this.spawnMonsterAmbient(monsterStates, dt);
     this.particles.update(dt);
 
     const open = new Set(sim.getOpenGates());
@@ -278,8 +288,8 @@ export class Renderer {
       const target = open.has(g.id) ? 0 : 1;
       this.gateAlpha.set(g.id, a + (target - a) * Math.min(1, dt * 6 + (open.has(g.id) ? 0.0 : 1)));
     }
-    this.drawScene(view, sim.getMechanismPoses(), open, sw, marbles, cam);
-    this.drawMinimap(marbles, view.box, true, cam);
+    this.drawScene(view, sim.getMechanismPoses(), open, sw, marbles, cam, monsterStates);
+    this.drawMinimap(marbles, view.box, true, cam, monsterStates);
   }
 
   /* ---------------------------------------------------------- helpers */
@@ -340,6 +350,7 @@ export class Renderer {
     for (const e of events) {
       switch (e.type) {
         case 'eliminated': {
+          if (e.reason === 'monster') break; // the monster 'devour' event already plays its own effect
           const m = find(e.marbleId);
           const col = m ? skinColor(m.profile.skin) : '#ffffff';
           this.particles.burst(e.x, e.y, col, 26, 9);
@@ -383,9 +394,45 @@ export class Renderer {
           if (g) this.particles.dust(g.center.x, g.center.y, alpha(map.theme.wall, 0.8), 18, Math.max(1, g.box.x1 - g.box.x0));
           break;
         }
+        case 'monster': {
+          const m = find(e.marbleId);
+          const col = m ? skinColor(m.profile.skin) : '#ffffff';
+          if (e.action === 'grab') {
+            this.particles.text(e.x, e.y - 1.1, '!', '#ffe14a', 1.3, 0.8);
+            this.particles.dust(e.x, e.y, 'rgba(210,200,230,0.8)', 8, 1.2);
+            this.particles.ring(e.x, e.y, '#ffe14a', 1.1, 0.35);
+          } else if (e.action === 'devour') {
+            this.particles.burst(e.x, e.y, col, 30, 10);
+            if (m) for (const c of m.profile.skin.colors.slice(0, 3)) this.particles.burst(e.x, e.y, c, 10, 8);
+            this.particles.burst(e.x, e.y, '#ffffff', 8, 7);
+            this.particles.ring(e.x, e.y, col, 1.8, 0.5);
+            this.particles.text(e.x, e.y - 1.2, 'ÑAM', '#ff8a3d', 1.15, 1.1);
+          } else {
+            this.particles.dust(e.x, e.y, 'rgba(235,240,250,0.85)', 14, 1.6);
+            this.particles.ring(e.x, e.y, '#d8e6ff', 1.2, 0.4);
+            this.particles.text(e.x, e.y - 1.0, '¡Uf!', '#9be7ff', 0.8, 0.8);
+          }
+          break;
+        }
         default:
           break;
       }
+    }
+  }
+
+  /** Ambient monster particles (fish bubbles). Cosmetic only. */
+  private spawnMonsterAmbient(states: readonly MonsterState[], dt: number): void {
+    if (dt <= 0) return;
+    this.bubbleAcc += dt * 6;
+    if (this.bubbleAcc < 1) return;
+    this.bubbleAcc = 0;
+    for (const st of states) {
+      if (st.kind !== 'fish' || st.phase === 'hidden' || st.visible < 0.4) continue;
+      const def = this.monsters.find((m) => m.def.id === st.id)?.def;
+      const size = def?.size ?? 0.8;
+      const bx = st.x - Math.cos(st.angle) * size * 0.2;
+      const by = st.y - Math.sin(st.angle) * size * 0.2 - size * 0.3;
+      this.particles.bubble(bx + (Math.random() - 0.5) * 0.3, by, 0.06 + Math.random() * 0.1);
     }
   }
 
@@ -398,6 +445,7 @@ export class Renderer {
     switches: Map<string, SwitchState>,
     marbles: readonly (PreviewMarble & Partial<MarbleState>)[] | readonly MarbleState[],
     cam: CameraState | null,
+    monsterStates: readonly MonsterState[] | null,
   ): void {
     const map = this.map!;
     const ctx = this.ctx;
@@ -480,8 +528,11 @@ export class Renderer {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     this.drawMarbles(view, marbles as readonly MarbleState[]);
 
-    // particles
+    // monsters (above walls and the marbles they hold)
     ctx.setTransform(s, 0, 0, s, tx, ty);
+    if (this.monsters.length) this.drawMonsters(box, marbles as readonly EnvMarble[], monsterStates);
+
+    // particles
     this.particles.draw(ctx);
 
     ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -506,6 +557,44 @@ export class Renderer {
 
     this.drawLabels(view);
     if (cam) this.drawNameTags(view, marbles as readonly MarbleState[]);
+  }
+
+  private drawMonsters(box: Box, marbles: readonly EnvMarble[], states: readonly MonsterState[] | null): void {
+    const ctx = this.ctx;
+    const env: MonsterEnv = {
+      clock: this.clock,
+      preview: states === null,
+      marbles,
+      redraw: (m) => {
+        const v = this.lastView;
+        const ms = m as unknown as MarbleState;
+        if (!v || !ms.profile) return;
+        ctx.save();
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        drawMarbleSprite(ctx, ms.profile.skin, m.x * v.s + v.tx, m.y * v.s + v.ty, m.radius * v.s, ms.angle);
+        ctx.restore();
+      },
+    };
+    if (states === null) {
+      // map preview: monsters at rest + dotted path hints
+      for (const m of this.monsters) {
+        if (!intersects(m.box, box)) continue;
+        drawMonsterHint(ctx, m.def);
+        ctx.save();
+        if (m.def.kind === 'fish' || m.def.kind === 'snake') ctx.globalAlpha = 0.6;
+        drawMonster(ctx, m.def, m.rest, env);
+        ctx.restore();
+      }
+      return;
+    }
+    for (let i = 0; i < states.length; i++) {
+      const st = states[i];
+      const item = this.monsters[i]?.def.id === st.id ? this.monsters[i] : this.monsters.find((m) => m.def.id === st.id);
+      if (!item || !intersects(item.box, box)) continue;
+      ctx.save();
+      drawMonster(ctx, item.def, st, env);
+      ctx.restore();
+    }
   }
 
   private drawBackdrop(view: View): void {
@@ -1128,6 +1217,7 @@ export class Renderer {
     viewBox: Box,
     live: boolean,
     cam?: CameraState,
+    monsterStates: readonly MonsterState[] | null = null,
   ): void {
     const g = this.miniCtx;
     if (!g || !this.mini || !this.miniStatic) return;
@@ -1143,6 +1233,47 @@ export class Renderer {
       if (m.status === 'eliminated') continue;
       g.fillStyle = skinColor(m.profile.skin);
       g.fillRect(X(m.x) - r, Y(m.y) - r, r * 2, r * 2);
+    }
+    // monsters
+    if (this.monsters.length) {
+      const mr = 2.6 * this.dpr;
+      const marks: { kind: Monster['kind']; x: number; y: number; a: number }[] = [];
+      if (live && monsterStates) {
+        for (const st of monsterStates) if (st.visible > 0.15 && st.phase !== 'hidden') marks.push({ kind: st.kind, x: st.x, y: st.y, a: st.visible });
+      } else {
+        for (const m of this.monsters) marks.push({ kind: m.def.kind, x: m.rest.x, y: m.rest.y, a: 0.8 });
+      }
+      for (const mk of marks) {
+        const x = X(mk.x);
+        const y = Y(mk.y);
+        g.globalAlpha = mk.a;
+        g.fillStyle = MONSTER_COLORS[mk.kind];
+        g.strokeStyle = 'rgba(8,10,16,0.9)';
+        g.lineWidth = 1 * this.dpr;
+        g.beginPath();
+        if (mk.kind === 'spider') {
+          g.moveTo(x, y - mr * 1.3);
+          g.lineTo(x + mr * 1.2, y + mr);
+          g.lineTo(x - mr * 1.2, y + mr);
+          g.closePath();
+        } else if (mk.kind === 'fish') {
+          g.ellipse(x, y, mr * 1.5, mr * 0.9, 0, 0, Math.PI * 2);
+        } else if (mk.kind === 'snake') {
+          g.moveTo(x - mr * 1.5, y + mr * 0.5);
+          g.quadraticCurveTo(x - mr * 0.5, y - mr * 1.2, x, y);
+          g.quadraticCurveTo(x + mr * 0.5, y + mr * 1.2, x + mr * 1.5, y - mr * 0.5);
+          g.lineWidth = 2.4 * this.dpr;
+          g.strokeStyle = MONSTER_COLORS.snake;
+          g.stroke();
+          g.globalAlpha = 1;
+          continue;
+        } else {
+          g.arc(x, y, mr * 1.25, 0, Math.PI * 2);
+        }
+        g.fill();
+        g.stroke();
+      }
+      g.globalAlpha = 1;
     }
     g.strokeStyle = 'rgba(255,255,255,0.9)';
     g.lineWidth = 1.2 * this.dpr;

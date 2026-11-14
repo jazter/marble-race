@@ -35,6 +35,8 @@ const REACTIONS: Opt[] = [
   ['launch', 'Lanzar'],
 ];
 
+const monstersOn = (c: GameConfig): boolean => c.monsters.count > 0 && Object.values(c.monsters.kinds).some(Boolean);
+
 export const SECTIONS: Section[] = [
   {
     title: 'Canicas',
@@ -131,6 +133,27 @@ export const SECTIONS: Section[] = [
       { kind: 'range', label: 'Velocidad', path: 'objects.speed', min: 0.2, max: 3, step: 0.05, unit: '×', decimals: 2 },
       { kind: 'range', label: 'Probabilidad de efecto', path: 'objects.effectChance', min: 0, max: 1, step: 0.01, percent: true },
       { kind: 'toggle', label: 'Zonas con efecto', path: 'objects.zones' },
+    ],
+  },
+  {
+    title: 'Monstruos',
+    icon: '🐙',
+    fields: [
+      {
+        kind: 'checks',
+        label: 'Tipos de monstruo',
+        path: 'monsters.kinds',
+        options: [
+          ['spider', 'Araña'],
+          ['octopus', 'Pulpo'],
+          ['fish', 'Pez'],
+          ['snake', 'Serpiente'],
+        ],
+      },
+      { kind: 'range', label: 'Cantidad por mapa', path: 'monsters.count', min: 0, max: 8, step: 1, hint: '0 = sin monstruos' },
+      { kind: 'range', label: 'Probabilidad de devorar', path: 'monsters.destroyChance', min: 0, max: 1, step: 0.01, percent: true, hint: 'Si no la devoran, la sueltan', enabledIf: monstersOn },
+      { kind: 'range', label: 'Tiempo atrapada', path: 'monsters.holdTime', min: 0.5, max: 6, step: 0.1, unit: ' s', decimals: 1, enabledIf: monstersOn },
+      { kind: 'range', label: 'Velocidad', path: 'monsters.speed', min: 0.25, max: 3, step: 0.05, unit: '×', decimals: 2, enabledIf: monstersOn },
     ],
   },
   {

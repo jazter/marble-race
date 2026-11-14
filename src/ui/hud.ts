@@ -1,9 +1,11 @@
 /** Race HUD: stats, physics chips, live leaderboard, toast feed, countdown. */
 import type { MapDef, MarbleProfile } from '../core/types';
 import type { EliminationReason, MarbleState, SimEvent, Simulation } from '../sim/api';
+import { MONSTER_NAMES } from '../render/monsters';
 import { skinSwatchCss } from '../render/skins';
+import type { MonsterKind } from '../core/config';
 import { $, el, fmtTime } from './dom';
-import { labelNode, labelText } from './marbleLabel';
+import { customOf, labelNode, labelText } from './marbleLabel';
 
 const REASONS: Record<EliminationReason, string> = {
   wall: 'fue eliminada por una pared letal',
@@ -35,6 +37,9 @@ export class Hud {
   private lastSlow = 0;
   private lastCd = '';
   private chipKey = '';
+  /** Which monster kind caught / devoured each marble (for leaderboard labels). */
+  private monsterOf = new Map<number, MonsterKind>();
+  private devoured = new Set<number>();
 
   constructor(
     private map: MapDef,
@@ -79,6 +84,7 @@ export class Hud {
 
   /** Per-frame update (cheap parts every frame, heavy parts ~5 Hz). */
   update(sim: Simulation, events: readonly SimEvent[]): void {
+    for (const e of events) if (e.type === 'monster' && e.action === 'devour') this.devoured.add(e.marbleId);
     for (const e of events) this.toast(e);
     this.updateCountdown(sim);
     const now = performance.now();
@@ -152,13 +158,19 @@ export class Hud {
         cls += ' fin';
       } else if (m.status === 'eliminated') {
         pos = '☠';
-        info = 'fuera';
-        cls += ' out';
+        const mk = this.monsterOf.get(m.id);
+        info = m.eliminatedReason === 'monster' ? (mk ? `devorada por ${MONSTER_NAMES[mk].by}` : 'devorada') : 'fuera';
+        cls += m.eliminatedReason === 'monster' ? ' out eaten' : ' out';
+      } else if (m.heldBy) {
+        pos = String(i + 1);
+        info = 'atrapada';
+        cls += ' held';
       } else {
         pos = String(i + 1);
         const gap = leader - m.progress;
         info = gap < 0.05 ? 'líder' : `-${gap.toFixed(1)} m`;
       }
+      if (customOf(m.profile)) cls += ' named';
       const key = pos + info + cls;
       if (key !== row.key) {
         row.key = key;
@@ -199,6 +211,7 @@ export class Hud {
         cls = 'good';
         break;
       case 'eliminated':
+        if (e.reason === 'monster' && this.devoured.has(e.marbleId)) return; // the "devoró" toast already told it
         text = `${this.name(e.marbleId)} ${REASONS[e.reason]}`;
         cls = 'bad';
         break;
@@ -214,6 +227,14 @@ export class Hud {
         if (!g || g.role === 'start') return;
         text = 'Se abrió una compuerta';
         cls = 'info';
+        break;
+      }
+      case 'monster': {
+        const k = MONSTER_NAMES[e.kind];
+        this.monsterOf.set(e.marbleId, e.kind);
+        const verb = e.action === 'grab' ? 'atrapó a' : e.action === 'devour' ? 'devoró a' : 'soltó a';
+        text = `${k.article} ${k.name} ${verb} ${this.name(e.marbleId)}`;
+        cls = e.action === 'devour' ? 'bad' : e.action === 'release' ? 'good' : 'info';
         break;
       }
       case 'raceEnd':

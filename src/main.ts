@@ -1,3 +1,4 @@
+/// <reference types="vite/client" />
 import './style.css';
 import { SIM_DT, defaultConfig, type GameConfig } from './core/config';
 import { cumulativeLengths } from './core/math';
@@ -13,7 +14,7 @@ import { $, el } from './ui/dom';
 import { isDialogOpen, openConfirm, openNaming } from './ui/dialogs';
 import { Hud } from './ui/hud';
 import { customOf, labelNode, marbleCanvas } from './ui/marbleLabel';
-import { clearCustomNames, onNamesChanged } from './ui/names';
+import { clearCustomNames, getAllCustomNames, onNamesChanged } from './ui/names';
 import { hidePodium, showPodium } from './ui/podium';
 import { initSoundControls } from './ui/sound';
 import { clearSavedConfig, loadAudioSettings, loadConfig, saveAudioSettings, saveConfig } from './ui/storage';
@@ -116,6 +117,8 @@ async function generate(randomSeed = false): Promise<void> {
   try {
     const vr = await generateValidatedRace(cfg, {
       signal: abort.signal,
+      // named marbles stay in the race when the count goes down (cosmetic: physics unchanged)
+      preferredKeys: Object.keys(getAllCustomNames()),
       onProgress: (p) => {
         const sim = p.phase === 'simulating' ? ` · simulando ${p.simTime.toFixed(1)} s` : p.phase === 'generating' ? ' · generando mapa' : '';
         progressLine.textContent = `Intento ${p.attempt}/${p.maxAttempts} · semilla ${p.seed}${sim}`;
@@ -424,4 +427,10 @@ canvas.addEventListener('pointermove', (e) => {
 
 new ResizeObserver(() => renderer.resize()).observe(canvas);
 setMode('idle');
-requestAnimationFrame(frame);
+if (import.meta.env.DEV) (window as unknown as { __game: unknown }).__game = { get sim() { return sim; }, get mode() { return mode; } };
+if (import.meta.env.DEV && new URLSearchParams(location.search).has('monsters-demo')) {
+  // dev-only visual test page for the monsters (stripped from production builds)
+  void import('./dev/monstersDemo').then((m) => m.startMonstersDemo(renderer, canvas));
+} else {
+  requestAnimationFrame(frame);
+}

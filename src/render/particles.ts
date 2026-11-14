@@ -2,7 +2,7 @@
  * Purely visual particles. Never read by (or fed back into) the simulation.
  * Uses Math.random on purpose: it must not touch sim determinism.
  */
-export type ParticleKind = 'spark' | 'confetti' | 'ring' | 'skull' | 'dust' | 'glow';
+export type ParticleKind = 'spark' | 'confetti' | 'ring' | 'skull' | 'dust' | 'glow' | 'bubble' | 'text';
 
 export interface Particle {
   kind: ParticleKind;
@@ -18,6 +18,8 @@ export interface Particle {
   vr: number;
   gravity: number;
   drag: number;
+  /** 'text' particles only. */
+  text?: string;
 }
 
 const MAX = 1800;
@@ -121,6 +123,17 @@ export class ParticleSystem {
     this.add({ kind: 'skull', x, y, vy: -2.2, life: 1.1, maxLife: 1.1, size: 0.55, color: '#ffffff', drag: 1.2 });
   }
 
+  /** Rising bubble (fish). */
+  bubble(x: number, y: number, size: number): void {
+    const life = 0.9 + Math.random() * 0.7;
+    this.add({ kind: 'bubble', x, y, vx: (Math.random() - 0.5) * 0.5, vy: -(0.8 + Math.random() * 0.9), life, maxLife: life, size, color: '#bfeaff', rot: Math.random() * 6, vr: 3 + Math.random() * 3 });
+  }
+
+  /** Floating pop text ("!", "ÑAM"). `size` = font size in metres. */
+  text(x: number, y: number, text: string, color: string, size = 0.9, life = 0.9): void {
+    this.add({ kind: 'text', x, y, vy: -1.6, life, maxLife: life, size, color, drag: 1.4, text });
+  }
+
   dust(x: number, y: number, color: string, n: number, spread: number): void {
     for (let i = 0; i < n; i++) {
       const life = 0.6 + Math.random() * 0.6;
@@ -169,6 +182,37 @@ export class ParticleSystem {
           ctx.beginPath();
           ctx.arc(p.x, p.y, p.size * (1.15 - t), 0, Math.PI * 2);
           ctx.stroke();
+          break;
+        }
+        case 'bubble': {
+          const wob = Math.sin(p.rot) * 0.04;
+          ctx.strokeStyle = p.color;
+          ctx.lineWidth = 0.035;
+          ctx.beginPath();
+          ctx.arc(p.x + wob, p.y, p.size, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.fillStyle = 'rgba(255,255,255,0.7)';
+          ctx.beginPath();
+          ctx.arc(p.x + wob - p.size * 0.3, p.y - p.size * 0.3, p.size * 0.22, 0, Math.PI * 2);
+          ctx.fill();
+          break;
+        }
+        case 'text': {
+          const pop = Math.min(1, (1 - t) * 6);
+          const sc = 0.6 + 0.5 * Math.sin(pop * Math.PI * 0.5) + (1 - t) * 0.12;
+          ctx.save();
+          ctx.translate(p.x, p.y);
+          ctx.scale(sc, sc);
+          ctx.font = `800 ${p.size}px system-ui, -apple-system, "Segoe UI", sans-serif`;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.lineJoin = 'round';
+          ctx.lineWidth = p.size * 0.22;
+          ctx.strokeStyle = 'rgba(10,12,20,0.85)';
+          ctx.strokeText(p.text ?? '', 0, 0);
+          ctx.fillStyle = p.color;
+          ctx.fillText(p.text ?? '', 0, 0);
+          ctx.restore();
           break;
         }
         case 'skull':
