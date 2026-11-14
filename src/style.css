@@ -79,6 +79,8 @@ input[type=range] { accent-color: var(--accent); height: 24px; }
 #minimap { position: absolute; right: 12px; bottom: 74px; border: 1px solid #ffffff33; border-radius: 8px; display: none; pointer-events: none; box-shadow: 0 6px 18px #0008; }
 body.mode-race #minimap, body.mode-preview #minimap { display: block; }
 body.mode-preview #minimap { bottom: auto; top: 12px; }
+/* race: top-left so it never sits under the leaderboard (right) or the toasts (bottom-left) */
+body.mode-race #minimap { left: 12px; right: auto; top: 12px; bottom: auto; }
 #btn-open-panel { position: absolute; top: 10px; left: 10px; z-index: 14; background: #131824dd; }
 
 .overlay { position: absolute; inset: 0; display: none; z-index: 10; }
@@ -186,6 +188,6 @@ body.mode-preview #minimap { bottom: auto; top: 12px; }
   .controls .lbl { display: none; }
   #minimap { bottom: auto; top: 90px; right: 8px; transform: scale(.7); transform-origin: top right; }
   body.mode-preview #minimap { top: 8px; }
-  body.mode-race #minimap { top: 48px; }
+  body.mode-race #minimap { top: 48px; left: auto; right: 8px; }
   .checks { grid-template-columns: 1fr 1fr; }
 }
