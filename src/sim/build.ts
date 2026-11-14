@@ -10,6 +10,7 @@ export const K_MECH = 2;
 export const K_ZONE = 3;
 export const K_SWITCH = 4;
 export const K_GATE = 5;
+export const K_MONSTER = 6;
 
 export interface FixTag {
   k: number;

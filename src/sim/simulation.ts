@@ -27,6 +27,7 @@ import type {
 import {
   addFixtures,
   K_GATE,
+  K_MONSTER,
   K_MARBLE,
   K_MECH,
   K_SWITCH,
@@ -40,6 +41,7 @@ import {
 } from './build';
 import { SimCamera } from './camera';
 import { advanceState, computePoses, initState, type MechRuntime } from './mechanisms';
+import { MonsterSystem } from './monsters';
 import { PathProgress } from './progress';
 import { combinePhysics, type SwitchRuntime } from './switches';
 
@@ -80,6 +82,8 @@ class SimImpl implements Simulation {
 
   private world: World;
   private rng: Rng;
+  private monsterRng: Rng;
+  private monsters!: MonsterSystem;
   private marbles: MarbleState[] = [];
   private bodies: (Body | null)[] = [];
   private fixtures: (Fixture | null)[] = [];
@@ -122,6 +126,7 @@ class SimImpl implements Simulation {
     this.map = map;
     this.config = config;
     this.rng = new Rng(map.seed);
+    this.monsterRng = new Rng((map.seed ^ 0x6d6f6e73) >>> 0);
     this.prog = new PathProgress(map.path);
     this.cam = new SimCamera(map, config, this.prog);
 
@@ -141,6 +146,7 @@ class SimImpl implements Simulation {
     this.phys = combinePhysics(config, this.switches);
     this.world.setGravity(new Vec2(this.phys.gravity.x, this.phys.gravity.y));
     this.buildMarbles(roster);
+    this.buildMonsters();
 
     this.world.on('begin-contact', (c) => this.onContact(c, true));
     this.world.on('end-contact', (c) => this.onContact(c, false));
@@ -264,6 +270,57 @@ class SimImpl implements Simulation {
           sign: def.effect === 'attract' ? 1 : -1,
         });
       }
+    });
+  }
+
+  private buildMonsters(): void {
+    const defs = this.map.monsters ?? [];
+    for (let i = 0; i < defs.length; i++) {
+      const d = defs[i];
+      if (d.kind !== 'octopus') continue;
+      const body = this.world.createBody({ type: 'static', position: new Vec2(0, 0) });
+      addFixtures(body, staticShapes({ type: 'circle', center: d.center, radius: d.bodyRadius }), {
+        restitution: 0,
+        friction: 0.2,
+        userData: { k: K_MONSTER, i },
+      });
+    }
+    const mc = this.config.monsters;
+    const sim = this;
+    this.monsters = new MonsterSystem(defs, {
+      marbles: this.marbles,
+      rng: this.monsterRng,
+      flowDir: this.map.flowDir,
+      holdTime: mc.holdTime,
+      destroyChance: mc.destroyChance,
+      speed: mc.speed,
+      hold: (m) => {
+        const b = sim.bodies[m.id];
+        if (!b) return;
+        b.setLinearVelocity(new Vec2(0, 0));
+        b.setAngularVelocity(0);
+        b.setActive(false);
+      },
+      release: (m, x, y, vx, vy) => {
+        m.heldBy = undefined;
+        m.x = x;
+        m.y = y;
+        m.vx = vx;
+        m.vy = vy;
+        const b = sim.bodies[m.id];
+        if (!b) return;
+        b.setPosition(new Vec2(x, y));
+        b.setActive(true);
+        b.setLinearVelocity(new Vec2(vx, vy));
+        b.setAwake(true);
+        sim.prevX[m.id] = x;
+        sim.prevY[m.id] = y;
+      },
+      devour: (m) => {
+        m.heldBy = undefined;
+        sim.eliminate(m, 'monster');
+      },
+      emit: (e) => sim.emit(e),
     });
   }
 
@@ -488,7 +545,7 @@ class SimImpl implements Simulation {
     const wind = phys.wind;
     const slowMul = Math.pow(1 - cfg.walls.slowFactor, dt);
     for (const m of this.marbles) {
-      if (m.status !== 'racing') continue;
+      if (m.status !== 'racing' || m.heldBy !== undefined) continue;
       const body = this.bodies[m.id]!;
       let ax = wind.x;
       let ay = wind.y;
@@ -537,6 +594,7 @@ class SimImpl implements Simulation {
     this.updateSwitchTimers();
     this.processFinish();
     this.processProgressAndBounds();
+    if (this.monsters.count > 0 && this.started) this.monsters.update(this.time, dt);
 
     this.cam.update(this.marbles, this.started);
     this.processOffscreen();
@@ -553,7 +611,7 @@ class SimImpl implements Simulation {
   private syncMarbles(): void {
     for (const m of this.marbles) {
       const b = this.bodies[m.id];
-      if (!b) continue;
+      if (!b || m.heldBy !== undefined) continue;
       const p = b.getPosition();
       const v = b.getLinearVelocity();
       m.x = p.x;
@@ -582,7 +640,7 @@ class SimImpl implements Simulation {
           } else if (this.slowCount[m.id] > 0) this.slowCount[m.id]--;
           continue;
         }
-        if (!r.begin || m.status !== 'racing') continue;
+        if (!r.begin || m.status !== 'racing' || m.heldBy !== undefined) continue;
         if (reaction === 'bounce') {
           if (this.fxCooldownOk(this.keyOfWall[r.idx], m.id, BOUNCE_COOLDOWN)) {
             this.emit({ t: this.time, type: 'effect', marbleId: m.id, effect: 'bounce', x: m.x, y: m.y });
@@ -608,7 +666,7 @@ class SimImpl implements Simulation {
           body.setLinearVelocity(new Vec2(v.x + dx * s, v.y + dy * s));
           this.emit({ t: this.time, type: 'effect', marbleId: m.id, effect: 'launch', x: m.x, y: m.y });
         }
-      } else if (r.begin && m.status === 'racing') {
+      } else if (r.begin && m.status === 'racing' && m.heldBy === undefined) {
         if (r.kind === K_MECH) {
           this.applyObjectEffect(m, this.mechs[r.idx].def.effect, null, this.keyOfMech[r.idx]);
         } else if (r.kind === K_ZONE) {
@@ -640,7 +698,7 @@ class SimImpl implements Simulation {
     const ab2 = abx * abx + aby * aby;
     const cand: { m: MarbleState; f: number }[] = [];
     for (const m of this.marbles) {
-      if (m.status !== 'racing') continue;
+      if (m.status !== 'racing' || m.heldBy !== undefined) continue;
       const s0 = cross({ x: abx, y: aby }, { x: this.prevX[m.id] - a.x, y: this.prevY[m.id] - a.y });
       const s1 = cross({ x: abx, y: aby }, { x: m.x - a.x, y: m.y - a.y });
       let hit = false;
@@ -677,7 +735,7 @@ class SimImpl implements Simulation {
     const bd = this.map.bounds;
     const seg = [0];
     for (const m of this.marbles) {
-      if (m.status !== 'racing') continue;
+      if (m.status !== 'racing' || m.heldBy !== undefined) continue;
       if (m.x < bd.minX || m.x > bd.maxX || m.y < bd.minY || m.y > bd.maxY) {
         this.eliminate(m, 'outOfBounds');
         continue;
@@ -693,7 +751,7 @@ class SimImpl implements Simulation {
     const hh = c.height / 2;
     const { offscreenKill, offscreenGrace } = this.config.camera;
     for (const m of this.marbles) {
-      if (m.status !== 'racing') continue;
+      if (m.status !== 'racing' || m.heldBy !== undefined) continue;
       const outside = Math.abs(m.x - c.x) > hw + m.radius || Math.abs(m.y - c.y) > hh + m.radius;
       if (outside) m.offscreenTime += SIM_DT;
       else m.offscreenTime = 0;
@@ -710,6 +768,10 @@ class SimImpl implements Simulation {
     const uy = -flow.y / fl;
     for (const m of this.marbles) {
       if (m.status !== 'racing') continue;
+      if (m.heldBy !== undefined) {
+        this.hist[m.id].length = 0;
+        continue;
+      }
       const h = this.hist[m.id];
       h.push(m.x, m.y);
       if (h.length > 10) h.splice(0, 2);
@@ -794,7 +856,7 @@ class SimImpl implements Simulation {
   }
 
   getMonsterStates(): readonly MonsterState[] {
-    return []; // TODO(monsters): implemented by the monsters work
+    return this.monsters.states();
   }
 
   getPhysicsState(): PhysicsState {

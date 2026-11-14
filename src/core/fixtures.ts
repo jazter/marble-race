@@ -261,3 +261,47 @@ export function sampleConfig(count = 12): GameConfig {
   c.marbles.count = count;
   return c;
 }
+
+/** sampleMap() plus one monster of each kind (for sim/render tests and scripts). */
+export function sampleMapWithMonsters(count = 12, radius = 0.45): MapDef {
+  const map = sampleMap(count, radius);
+  map.seed = 1234;
+  map.monsters = [
+    {
+      id: 'spider1',
+      kind: 'spider',
+      anchor: { x: -5.5, y: 20.5 },
+      down: { x: 0, y: 1 },
+      restLength: 1.5,
+      maxLength: 7,
+      huntWidth: 1.4,
+      size: 0.6,
+    },
+    {
+      id: 'octopus1',
+      kind: 'octopus',
+      center: { x: 5.5, y: 33 },
+      bodyRadius: 0.9,
+      reach: 3.6,
+      tentacles: 8,
+      facing: -Math.PI / 2,
+      size: 0.35,
+    },
+    { id: 'fish1', kind: 'fish', a: { x: -7.5, y: 21.5 }, b: { x: 7.5, y: 21.5 }, speed: 5, rest: 6, phase: 4, size: 0.7 },
+    {
+      id: 'snake1',
+      kind: 'snake',
+      passes: [
+        { a: { x: -7.5, y: 8.5 }, b: { x: 7.5, y: 9.5 } },
+        { a: { x: -7.5, y: 14 }, b: { x: 7.5, y: 4 } },
+        { a: { x: 7.5, y: 38 }, b: { x: -7.5, y: 44 } },
+      ],
+      length: 4,
+      speed: 6,
+      rest: 5,
+      phase: 3,
+      size: 0.6,
+    },
+  ];
+  return map;
+}
