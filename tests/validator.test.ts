@@ -48,3 +48,19 @@ describe('validator', () => {
     await expect(generateValidatedRace(cfg)).rejects.toThrow(/2 intentos/);
   });
 });
+
+describe('requiredFinishers', () => {
+  it('never asks for more finishers than marbles or podium places', async () => {
+    const { requiredFinishers } = await import('../src/validate/validator');
+    const cfg = sampleConfig(1);
+    cfg.race.minFinishers = 3;
+    expect(requiredFinishers(cfg)).toBe(1);
+    const c2 = sampleConfig(20);
+    c2.race.minFinishers = 5;
+    c2.race.podiumSize = 3;
+    c2.race.endMode = 'podium';
+    expect(requiredFinishers(c2)).toBe(3);
+    c2.race.endMode = 'all';
+    expect(requiredFinishers(c2)).toBe(5);
+  });
+});

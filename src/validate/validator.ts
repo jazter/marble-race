@@ -39,15 +39,27 @@ export interface ValidationResult {
   simSeconds: number;
 }
 
+/**
+ * Finishers a map must produce to be accepted: `race.minFinishers`, but never
+ * more than there are marbles, nor (in podium mode, where the race ends shortly
+ * after the podium fills) more than the podium size.
+ */
+export function requiredFinishers(config: GameConfig): number {
+  let n = Math.min(config.race.minFinishers, config.marbles.count);
+  if (config.race.endMode === 'podium') n = Math.min(n, config.race.podiumSize);
+  return Math.max(1, Math.floor(n));
+}
+
 function judge(sim: Simulation, config: GameConfig): ValidationResult {
   const res = sim.getResult();
   const finishers = res.finishers.length;
   const base = { finishers, firstFinishTime: res.finishers[0]?.time ?? -1, simSeconds: sim.time };
-  if (finishers >= config.race.minFinishers) return { ok: true, reason: 'ok', ...base };
+  const need = requiredFinishers(config);
+  if (finishers >= need) return { ok: true, reason: 'ok', ...base };
   let reason: string;
   if (res.reason === 'noMarbles') reason = 'Todas las canicas fueron eliminadas';
   else if (finishers === 0) reason = 'Ninguna canica llegó a la meta (tiempo agotado)';
-  else reason = `Sólo ${finishers} canica(s) llegaron a la meta (mínimo ${config.race.minFinishers})`;
+  else reason = `Sólo ${finishers} canica(s) llegaron a la meta (mínimo ${need})`;
   return { ok: false, reason, ...base };
 }
 
@@ -62,7 +74,7 @@ export function runValidation(
   try {
     const maxSteps = opts.maxSteps ?? Math.ceil(((config.race.countdown + config.race.timeLimit) / SIM_DT) * 1.05) + 10;
     let n = 0;
-    while (sim.getResult().finishers.length < config.race.minFinishers && !sim.isOver() && n < maxSteps) {
+    while (sim.getResult().finishers.length < requiredFinishers(config) && !sim.isOver() && n < maxSteps) {
       sim.step();
       n++;
     }
@@ -114,7 +126,7 @@ export async function generateValidatedRace(config: GameConfig, opts: ValidateOp
       sim = createSimulation(map, roster, config);
       let n = 0;
       report('simulating', 0);
-      while (sim.getResult().finishers.length < config.race.minFinishers && !sim.isOver() && n < maxSteps) {
+      while (sim.getResult().finishers.length < requiredFinishers(config) && !sim.isOver() && n < maxSteps) {
         const t0 = performance.now(); // scheduling only; never affects sim state
         do {
           sim.step();
@@ -122,7 +134,7 @@ export async function generateValidatedRace(config: GameConfig, opts: ValidateOp
         } while (
           n < maxSteps &&
           !sim.isOver() &&
-          sim.getResult().finishers.length < config.race.minFinishers &&
+          sim.getResult().finishers.length < requiredFinishers(config) &&
           performance.now() - t0 < sliceMs
         );
         report('simulating', sim.time);

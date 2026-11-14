@@ -219,7 +219,7 @@ export function defaultConfig(): GameConfig {
       podiumSize: 3,
       timeLimit: 180,
       countdown: 3,
-      minFinishers: 1,
+      minFinishers: 3,
       unstuck: true,
       endMode: 'podium',
     },

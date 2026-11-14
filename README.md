@@ -88,7 +88,7 @@ Todas las opciones están en el panel lateral (⚙ en móvil). *Restablecer valo
 |---|---|
 | Podio (puestos) | 3 |
 | Tiempo límite / cuenta regresiva | 180 s / 3 s |
-| Mínimo de llegadas para validar | 1 |
+| Mínimo de llegadas para validar | 3 (nunca más que las canicas ni, en modo podio, que el tamaño del podio) |
 | Anti-atascos | Activo |
 | Fin de la carrera | Al completar el podio (también: cuando terminan todas las canicas) |
 
@@ -105,7 +105,7 @@ Todas las opciones están en el panel lateral (⚙ en móvil). *Restablecer valo
 ## Cómo funciona
 
 - **Simulación determinista**: [planck.js](https://piqnt.com/planck.js/) (Box2D) con paso fijo de 1/120 s y generador aleatorio con semilla. No se usa `Math.random` ni el reloj, así que el mismo mapa y configuración producen siempre la misma carrera.
-- **Validador**: simula la carrera completa sin renderizar. Si no llegan al menos `minFinishers` canicas a la meta, prueba con `seed + 1`, hasta `maxAttempts` intentos.
+- **Validador**: simula la carrera completa sin renderizar. Si no llegan al menos `minFinishers` canicas a la meta (acotado al número de canicas y al tamaño del podio), prueba con `seed + 1`, hasta `maxAttempts` intentos.
 - **Carrera visible**: vuelve a simular exactamente la carrera validada, por eso lo que se valida es lo que se ve.
 
 Estructura de `src/`:
