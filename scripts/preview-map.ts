@@ -28,7 +28,7 @@ let o = '';
 const flowAng = Math.atan2(map.flowDir.x, map.flowDir.y); // canonical y-down -> rotate local by -ga
 void flowAng;
 for (const w of map.walls) {
-  const c = w.boundary ? '#6b7a99' : col[w.reaction];
+  const c = w.boundary ? (w.reaction === 'solid' ? '#6b7a99' : col[w.reaction]) : col[w.reaction];
   const s = w.shape;
   if (s.type === 'polyline') o += `<polyline points="${pts(s.points)}" fill="none" stroke="${c}" stroke-width="${s.thickness * S}" stroke-linejoin="round" stroke-linecap="round"/>`;
   else if (s.type === 'polygon') o += `<polygon points="${pts(s.points)}" fill="${c}"/>`;

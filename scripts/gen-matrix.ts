@@ -16,9 +16,10 @@ const variants: [string, (c: GameConfig) => void][] = [
   ['100 marbles', (c) => (c.marbles.count = 100)],
   ['gravity 35deg', (c) => (c.physics.gravityAngle = 35)],
   ['gravity -90deg (sideways)', (c) => (c.physics.gravityAngle = -90)],
-  ['offscreen kill + leader cam', (c) => (c.camera.offscreenKill = true)],
-  ['offscreen kill + scroll cam', (c) => { c.camera.offscreenKill = true; c.camera.mode = 'scroll'; }],
   ['hard (difficulty 1, density 1)', (c) => { c.map.difficulty = 1; c.objects.density = 1; }],
+  ['solid boundary walls', (c) => (c.walls.boundary = 'solid')],
+  ['mixed boundary walls', (c) => (c.walls.boundary = 'mixed')],
+  ['launch boundary walls', (c) => (c.walls.boundary = 'launch')],
   ['kill boundary walls', (c) => (c.walls.boundary = 'kill')],
   ['minFinishers 3', (c) => (c.race.minFinishers = 3)],
 ];

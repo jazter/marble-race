@@ -18,6 +18,9 @@ export const MONSTER_SEED_SALT = 0x4d4f4e53;
 /** Octopus/snake each add a dedicated segment; spider/fish need a free regular segment (<= one per segment). */
 export const ARENA_KINDS: ReadonlySet<MonsterKind> = new Set<MonsterKind>(['octopus', 'snake']);
 
+/** Length of the merge funnel at the end of a galton / lanes segment where a spider may hang. */
+const SPIDER_TAIL = 11;
+
 export interface SegRec {
   type: string;
   y0: number;
@@ -325,6 +328,9 @@ function placeFish(ctx: Ctx, world: World, rec: SegRec, rng: Rng, id: string): M
 export function placeMonsters(ctx: Ctx, rng: Rng, kinds: MonsterKind[], recs: SegRec[], fixed: Monster[], world: World): Monster[] {
   const out: Monster[] = [...fixed];
   const free = recs.filter((r) => !r.regroup && !r.arena && r.type !== 'start' && r.type !== 'finish');
+  // galton / lanes have no free horizontal line (fish) and no room for the others except the merge funnel at their end: a spider may hang there
+  const isBoard = (r: SegRec): boolean => r.type === 'galton' || r.type === 'lanes';
+  const spiderZone = (r: SegRec): SegRec => (isBoard(r) ? { ...r, y0: Math.max(r.y0, r.y1 - SPIDER_TAIL) } : r);
   const used = new Set<SegRec>();
   const flexible = kinds.filter((k) => k === 'spider' || k === 'fish');
   let nid = 100;
@@ -335,8 +341,9 @@ export function placeMonsters(ctx: Ctx, rng: Rng, kinds: MonsterKind[], recs: Se
       .filter((o) => !used.has(o.r))
       .sort((a, b) => a.d - b.d);
     for (const { r } of order) {
+      if (kind === 'fish' && isBoard(r)) continue;
       const id = `m${nid}`;
-      const m = kind === 'spider' ? placeSpider(world, r, rng, id) : placeFish(ctx, world, r, rng, id);
+      const m = kind === 'spider' ? placeSpider(world, spiderZone(r), rng, id) : placeFish(ctx, world, r, rng, id);
       if (m) {
         used.add(r);
         out.push(m);

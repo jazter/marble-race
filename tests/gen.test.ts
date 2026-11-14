@@ -3,6 +3,8 @@ import { defaultConfig, type GameConfig } from '../src/core/config';
 import { dirFromAngle, dot, sub } from '../src/core/math';
 import { generateMap } from '../src/gen';
 import type { MapDef, Monster, Vec } from '../src/core/types';
+import { analyzeAlignment, segmentYRanges } from '../src/gen/analysis';
+import { laneLog } from '../src/gen/boards';
 
 const cfgWith = (f: (c: GameConfig) => void): GameConfig => {
   const c = defaultConfig();
@@ -311,5 +313,186 @@ describe('monsters', () => {
     const o = generateMap(withM(1, { octopus: true }, 45), 4).monsters![0];
     if (o.kind !== 'octopus') throw new Error('expected octopus');
     expect(Math.cos(o.facing) * m.flowDir.x + Math.sin(o.facing) * m.flowDir.y).toBeCloseTo(-1, 6);
+  });
+});
+
+const baseTypes = (m: MapDef): string[] => m.segments.filter((s) => s.type !== 'start' && s.type !== 'finish' && s.type !== 'octopus' && s.type !== 'snakePit').map((s) => s.type);
+
+describe('ramp alignment and chicanes', () => {
+  it('never lines up the gaps of consecutive ramps and alternates chicanes', () => {
+    for (let seed = 1; seed <= 30; seed++) {
+      for (const f of [(): void => {}, (): void => undefined]) void f;
+      const c = cfgWith((x) => ((x.switches.frequency = 0.8), (x.map.segments = 10)));
+      const rep = analyzeAlignment(generateMap(c, seed));
+      expect(rep.aligned.length).toBe(0);
+      expect(rep.sameDirChicanes).toBe(0);
+      const rep2 = analyzeAlignment(generateMap(defaultConfig(), seed));
+      expect(rep2.aligned.length).toBe(0);
+      expect(rep2.sameDirChicanes).toBe(0);
+    }
+  });
+});
+
+describe('galton and lanes segments', () => {
+  const R = 0.45 * 2;
+  it.each([6, 8, 12])('places both at least once with %i segments, not first, not adjacent', (n) => {
+    for (let seed = 1; seed <= 12; seed++) {
+      const m = generateMap(cfgWith((c) => (c.map.segments = n)), seed);
+      const types = baseTypes(m);
+      expect(types.length).toBe(n);
+      expect(types.filter((t) => t === 'galton').length).toBeGreaterThanOrEqual(1);
+      expect(types.filter((t) => t === 'lanes').length).toBeGreaterThanOrEqual(1);
+      expect(types[0]).not.toBe('galton');
+      expect(types[0]).not.toBe('lanes');
+      expect(types.filter((t) => t === 'funnelGate' || t === 'rotorChamber').length).toBe(2);
+      // the planned pair is never adjacent (extra random picks may be)
+      const gs = types.flatMap((t, i) => (t === 'galton' ? [i] : []));
+      const ls = types.flatMap((t, i) => (t === 'lanes' ? [i] : []));
+      expect(gs.some((g) => ls.some((l) => Math.abs(g - l) > 1))).toBe(true);
+    }
+  });
+
+  it('does not force them below 6 segments', () => {
+    const m = generateMap(cfgWith((c) => (c.map.segments = 4)), 3);
+    expect(baseTypes(m).length).toBe(4);
+  });
+
+  it('builds lanes within the width rule (2..5 lanes) and shrinks the count on narrow corridors', () => {
+    for (const w of [10, 16, 24]) {
+      let seen = 0;
+      for (let seed = 1; seed <= 25; seed++) {
+        const c = cfgWith((x) => ((x.map.width = w), (x.map.segments = 8)));
+        const m = generateMap(c, seed);
+        for (const st of laneLog) {
+          seen++;
+          const n = st.length;
+          expect(n).toBeGreaterThanOrEqual(2);
+          expect(n).toBeLessThanOrEqual(5);
+          const lane = (w - 0.5 - (n - 1) * 0.24) / n;
+          expect(lane).toBeGreaterThanOrEqual(Math.max(2.8, 3.2 * R) - 1e-9);
+          expect(st).toContain('rapido');
+        }
+        expect(m.segments.some((s) => s.type === 'lanes')).toBe(true);
+      }
+      expect(seen).toBeGreaterThan(0);
+    }
+    // 16 m can hold 5 lanes
+    let max = 0;
+    for (let seed = 1; seed <= 40; seed++) {
+      generateMap(cfgWith((x) => (x.map.segments = 8)), seed);
+      for (const st of laneLog) max = Math.max(max, st.length);
+    }
+    expect(max).toBe(5);
+  });
+
+  it('galton pegs keep the gap rule, bins are open at the bottom and slats are walls', () => {
+    for (let seed = 1; seed <= 10; seed++) {
+      const m = generateMap(cfgWith((c) => (c.map.segments = 8)), seed);
+      const rng = segmentYRanges(m).find((s) => s.type === 'galton');
+      expect(rng).toBeDefined();
+      const r = rng as { y0: number; y1: number };
+      const pegs = m.walls.filter((w) => (w.style === 'peg' || w.style === 'bumper') && w.shape.type === 'circle' && w.shape.center.y > r.y0 && w.shape.center.y < r.y1);
+      expect(pegs.length).toBeGreaterThan(15);
+      const rp = 0.45 * 1.5;
+      for (const a of pegs)
+        for (const b of pegs) {
+          if (a === b || a.shape.type !== 'circle' || b.shape.type !== 'circle') continue;
+          const d = Math.hypot(a.shape.center.x - b.shape.center.x, a.shape.center.y - b.shape.center.y) - a.shape.radius - b.shape.radius;
+          // wall-embedded neighbours aside, no pair of pegs is closer than the marble gap rule... except mirrored pairs on one wall row
+          if (d < 2.2 * 2 * rp - 1e-6) expect(d).toBeGreaterThan(2.2 * 2 * rp - 1e-6);
+        }
+      const slats = m.walls.filter((w) => w.style === 'wall' && w.shape.type === 'polygon' && w.shape.points.length === 5 && w.shape.points[0].y > r.y0 && w.shape.points[0].y < r.y1);
+      expect(slats.length).toBeGreaterThanOrEqual(1);
+      for (const w of slats) expect(w.reaction).toBe('solid');
+      expect(pegs.every((w) => w.reaction !== 'kill' && w.reaction !== 'slow')).toBe(true);
+    }
+  });
+
+  it('is deterministic with the new segments', () => {
+    const c = cfgWith((x) => (x.map.segments = 10));
+    expect(JSON.stringify(generateMap(c, 21))).toBe(JSON.stringify(generateMap(c, 21)));
+  });
+
+  it('keeps switches and monsters out of them', () => {
+    for (let seed = 1; seed <= 12; seed++) {
+      const c = cfgWith((x) => ((x.map.segments = 10), (x.switches.frequency = 1), (x.monsters.count = 8)));
+      const m = generateMap(c, seed);
+      const ranges = segmentYRanges(m).filter((s) => s.type === 'galton' || s.type === 'lanes');
+      for (const r of ranges) {
+        for (const sw of m.switches) expect(sw.position.y < r.y0 || sw.position.y > r.y1).toBe(true);
+        // only a spider may hang in the merge funnel at the end of the segment
+        for (const mo of m.monsters ?? []) for (const p of monsterPoints(mo)) expect(p.y < r.y0 || p.y > r.y1 || (mo.kind === 'spider' && p.y > r.y1 - 20)).toBe(true);
+      }
+    }
+  });
+});
+
+describe('mixed boundary', () => {
+  const mixedCfg = (extra?: (c: GameConfig) => void): GameConfig => cfgWith((c) => ((c.walls.boundary = 'mixed'), (c.map.segments = 10), extra?.(c)));
+  const pieces = (m: MapDef) => m.walls.filter((w) => /^b\d+$/.test(w.id));
+
+  it('gives several different reactions, never kill, launch pushes along the flow', () => {
+    const seen = new Set<string>();
+    for (let seed = 1; seed <= 10; seed++) {
+      const m = generateMap(mixedCfg(), seed);
+      for (const w of pieces(m)) {
+        expect(w.boundary).toBe(true);
+        expect(w.reaction).not.toBe('kill');
+        seen.add(w.reaction);
+        if (w.reaction === 'launch') {
+          expect(w.launchDir).toBeDefined();
+          expect(dot(w.launchDir as Vec, m.flowDir)).toBeGreaterThan(0.8);
+        }
+      }
+      // never two launch pieces in a row
+      const ps = pieces(m);
+      for (let i = 1; i < ps.length; i++) expect(ps[i].reaction === 'launch' && ps[i - 1].reaction === 'launch').toBe(false);
+      expect(ps.filter((w) => w.reaction !== 'solid').length).toBeGreaterThan(3);
+    }
+    expect(seen.has('solid') && seen.has('bounce') && seen.has('slow') && seen.has('launch')).toBe(true);
+  });
+
+  it('keeps start box, finish and regroup / galton / lanes walls solid', () => {
+    for (let seed = 1; seed <= 8; seed++) {
+      const m = generateMap(mixedCfg(), seed);
+      const prot = segmentYRanges(m).filter((s) => s.type === 'funnelGate' || s.type === 'rotorChamber' || s.type === 'galton' || s.type === 'lanes' || s.type === 'finish' || s.type === 'start');
+      expect(prot.length).toBeGreaterThan(3);
+      for (const w of pieces(m)) {
+        if (w.shape.type !== 'polyline' || w.reaction === 'solid') continue;
+        const ys = w.shape.points.map((p) => p.y);
+        const y0 = Math.min(...ys);
+        const y1 = Math.max(...ys);
+        for (const r of prot) {
+          // a non-solid piece must not overlap a protected range (start / finish use their own bounds)
+          if (r.type === 'start') expect(y0).toBeGreaterThan(1.9);
+          else if (r.type === 'finish') expect(y1).toBeLessThanOrEqual(r.y0 + 1.6 + 1e-6);
+          else expect(y1 <= r.y0 + 3 || y0 >= r.y1 - 8).toBe(true);
+        }
+      }
+    }
+  });
+
+  it('only changes the boundary pieces compared with solid mode', () => {
+    for (let seed = 1; seed <= 6; seed++) {
+      const strip = (m: MapDef): string => JSON.stringify({ ...m, walls: m.walls.filter((w) => !/^b\d+$/.test(w.id)) });
+      const a = generateMap(cfgWith((c) => ((c.walls.boundary = 'solid'), (c.map.segments = 10))), seed);
+      const b = generateMap(mixedCfg(), seed);
+      expect(strip(b)).toBe(strip(a));
+      // same outer outline: every solid piece's points lie on the solid outline
+      const len = (m: MapDef): number => pieces(m).reduce((t, w) => t + (w.shape.type === 'polyline' ? w.shape.points.slice(1).reduce((s, p, i) => s + Math.hypot(p.x - (w.shape as { points: Vec[] }).points[i].x, p.y - (w.shape as { points: Vec[] }).points[i].y), 0) : 0), 0);
+      expect(len(b)).toBeCloseTo(len(a), 3);
+    }
+  });
+
+  it('respects disabled special reactions and is deterministic', () => {
+    const c = mixedCfg((x) => (x.walls.special = { bounce: true, slow: false, kill: true, launch: false }));
+    const m = generateMap(c, 4);
+    for (const w of pieces(m)) expect(['solid', 'bounce']).toContain(w.reaction);
+    expect(JSON.stringify(generateMap(c, 4))).toBe(JSON.stringify(generateMap(c, 4)));
+  });
+
+  it('kill mode never uses mixed reactions', () => {
+    const m = generateMap(cfgWith((c) => (c.walls.boundary = 'kill')), 3);
+    for (const w of pieces(m)) expect(w.reaction).toBe('solid');
   });
 });

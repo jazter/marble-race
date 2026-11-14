@@ -35,6 +35,14 @@ export interface Ctx {
   path: Vec[];
   /** Ramps created by the segment being built (switch hosts). */
   ramps: Ramp[];
+  /**
+   * Gap side (-1 left / +1 right) of the last ramp placed anywhere in the course, or 0 when
+   * something since then (pegs, funnel, mechanism...) already redirects the marbles. The next
+   * ramp attaches to this side so that it catches whatever falls through that gap.
+   */
+  lastGap: number;
+  /** Direction (-1 / +1) of the last chicane, 0 if none yet. */
+  lastChicane: number;
   counters: Record<string, number>;
   kills: number;
   destroys: number;
@@ -68,6 +76,8 @@ export function makeCtx(cfg: GameConfig, rng: Rng): Ctx {
     right: [],
     path: [],
     ramps: [],
+    lastGap: 0,
+    lastChicane: 0,
     counters: {},
     kills: 0,
     destroys: 0,
@@ -184,8 +194,19 @@ export function addWall(ctx: Ctx, shape: StaticShape, style: Wall['style'], opts
   return w;
 }
 
-/** Straight ramp wall (never 'kill'). */
+/**
+ * Side (-1 = left wall, +1 = right wall) a new wall-attached ramp should hang from: the gap side of
+ * the previous ramp (it catches what falls through that gap), else `fallback`.
+ */
+export function rampSide(ctx: Ctx, fallback: number): number {
+  return ctx.lastGap !== 0 ? ctx.lastGap : fallback;
+}
+
+/** Straight ramp wall (never 'kill'). Records its gap side in ctx.lastGap. */
 export function addRamp(ctx: Ctx, a: Vec, b: Vec, thick = 0.4): Ramp {
+  // the end that is farther from the centre line is attached to the wall; the gap is on the other side
+  const attach = Math.abs(a.x - ctx.cx) >= Math.abs(b.x - ctx.cx) ? a : b;
+  ctx.lastGap = attach.x < ctx.cx ? 1 : -1;
   const down = b.y >= a.y ? sub(b, a) : sub(a, b);
   const w = addWall(ctx, { type: 'polyline', points: [a, b], thickness: thick }, 'ramp', { surface: true, dir: down });
   const ramp: Ramp = { id: w.id, a, b, thick };

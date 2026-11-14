@@ -20,11 +20,13 @@ import {
   nid,
   pathTo,
   propellerShapes,
+  rampSide,
   rowGap,
   sawShapes,
   sweeperXs,
   kindEnabled,
 } from './util';
+import { galton, galtonAvailable, lanes, lanesAvailable } from './boards';
 
 export type SegmentType =
   | 'zigzag'
@@ -38,7 +40,9 @@ export type SegmentType =
   | 'pads'
   | 'switch'
   | 'funnelGate'
-  | 'rotorChamber';
+  | 'rotorChamber'
+  | 'galton'
+  | 'lanes';
 
 const finishSeg = (ctx: Ctx, yEnd: number): void => {
   extend(ctx, yEnd);
@@ -53,7 +57,7 @@ function zigzagRamps(ctx: Ctx, n: number): Ramp[] {
   const { cx, hw, rng } = ctx;
   const gap = Math.max(3, 4 * ctx.R) + 0.6;
   const sep = Math.max(3.5, 5 * ctx.R);
-  let side = rng.sign();
+  let side = rampSide(ctx, rng.sign());
   let y = ctx.y + 2;
   const out: Ramp[] = [];
   for (let i = 0; i < n; i++) {
@@ -395,7 +399,7 @@ const LABELS: Record<SwitchActionType, string> = {
 function tailRamp(ctx: Ctx): void {
   const { cx, hw, rng } = ctx;
   const gap = Math.max(3, 4 * ctx.R) + 0.6;
-  const side = rng.sign();
+  const side = rampSide(ctx, rng.sign());
   const s = rng.range(14, 22) * DEG;
   const attachX = side < 0 ? cx - hw - 0.15 : cx + hw + 0.15;
   const freeX = side < 0 ? cx + hw - gap : cx - hw + gap;
@@ -668,6 +672,8 @@ export const LIBRARY: SegmentDef[] = [
     available: (c) => c.cfg.switches.enabled && Object.values(c.cfg.switches.actions).some(Boolean),
     ownSwitch: true,
   },
+  { type: 'galton', weight: 1.2, run: galton, available: galtonAvailable, ownSwitch: true },
+  { type: 'lanes', weight: 1.2, run: lanes, available: lanesAvailable, ownSwitch: true },
   { type: 'funnelGate', weight: 1, run: funnelGate, available: regroupAvailable, regroup: true },
   { type: 'rotorChamber', weight: 1, run: rotorChamber, available: regroupAvailable, regroup: true },
 ];

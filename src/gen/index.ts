@@ -3,11 +3,12 @@
  * and rotates everything at the end to match the configured gravity direction.
  * Deterministic for (config, seed); only uses the seeded Rng.
  */
-import type { GameConfig } from '../core/config';
+import type { GameConfig, WallReaction } from '../core/config';
 import { DEG, cumulativeLengths, dirFromAngle, rotate } from '../core/math';
 import { Rng } from '../core/rng';
 import type { MapDef, Monster, StaticShape, Vec } from '../core/types';
 import { LIBRARY, maybeSwitch, type SegmentDef } from './segments';
+import { galtonAvailable, laneLog, lanesAvailable } from './boards';
 import {
   MONSTER_SEED_SALT,
   type SegRec,
@@ -114,8 +115,12 @@ function buildFinish(ctx: Ctx): MapDef['finish'] {
   };
 }
 
-function pickSegment(ctx: Ctx, prev: string | null, first: boolean): SegmentDef {
-  let cands = LIBRARY.filter((d) => !d.regroup && d.available(ctx) && d.type !== prev);
+/** Segment types that reset the "gap side" tracking: something in them redirects the marbles. */
+const REDIRECTING = new Set(['funnel', 'pegs', 'propellers', 'arms', 'saws', 'triangles', 'hammers', 'funnelGate', 'rotorChamber', 'galton', 'lanes']);
+const SPECIAL = new Set(['galton', 'lanes']);
+
+function pickSegment(ctx: Ctx, prev: string | null, first: boolean, used: Record<string, number>, maxSpecial: number): SegmentDef {
+  let cands = LIBRARY.filter((d) => !d.regroup && d.available(ctx) && d.type !== prev && !(SPECIAL.has(d.type) && (used[d.type] ?? 0) >= maxSpecial));
   if (first) {
     const soft = cands.filter((d) => d.type === 'zigzag' || d.type === 'funnel' || d.type === 'pegs');
     if (soft.length) cands = soft;
@@ -139,6 +144,20 @@ export function planRegroups(count: number, nSeg: number): Set<number> {
       else if (b >= 1 && !out.has(b)) idx = b;
     }
     out.add(idx);
+  }
+  return out;
+}
+
+/** Segment index -> 'galton' | 'lanes': one of each (seeded slots, never first, never adjacent to each other, never a regroup). */
+export function planSpecials(nSeg: number, regroupAt: Set<number>, rng: Rng, want: ('galton' | 'lanes')[]): Map<number, 'galton' | 'lanes'> {
+  const out = new Map<number, 'galton' | 'lanes'>();
+  if (nSeg < 6) return out;
+  const order = rng.shuffle(want.slice());
+  for (const kind of order) {
+    const free: number[] = [];
+    for (let i = 1; i < nSeg; i++) if (!regroupAt.has(i) && !out.has(i) && ![...out.keys()].some((k) => Math.abs(k - i) <= 1)) free.push(i);
+    const pick = free.length ? free[Math.floor(rng.next() * free.length)] : -1;
+    if (pick >= 0) out.set(pick, kind);
   }
   return out;
 }
@@ -201,8 +220,101 @@ function emitBoundary(ctx: Ctx, chain: Vec[], lethalRanges: [number, number][] |
   }
 }
 
+/** Canonical-frame y-ranges whose outer walls stay plain solid in 'mixed' mode. */
+type Range = [number, number];
+
+/**
+ * 'mixed' outer walls: the chain is cut into pieces of roughly 4-8 m, each with its own reaction drawn from a
+ * separate Rng (so the course itself never depends on the boundary mode). Never kill; launch pieces push along the
+ * flow tilted toward the centre; the start box, finish, regroups, galton and lanes stay solid.
+ */
+function emitMixed(ctx: Ctx, chain: Vec[], protect: Range[], rng: Rng): void {
+  const L = ctx.left.length;
+  const sp = ctx.cfg.walls.special;
+  const ok: Record<'bounce' | 'slow' | 'launch', boolean> = { bounce: sp.bounce, slow: sp.slow, launch: sp.launch };
+  // y where ramps hang from each wall (a slow piece there would hold marbles back)
+  const attachYs: Record<'left' | 'right', number[]> = { left: [], right: [] };
+  const xAt = (arr: Vec[], y: number): number => {
+    if (y <= arr[0].y) return arr[0].x;
+    for (let i = 0; i < arr.length - 1; i++) if (y <= arr[i + 1].y) return arr[i + 1].y - arr[i].y < 1e-9 ? arr[i + 1].x : arr[i].x + ((arr[i + 1].x - arr[i].x) * (y - arr[i].y)) / (arr[i + 1].y - arr[i].y);
+    return arr[arr.length - 1].x;
+  };
+  for (const w of ctx.walls) {
+    if (w.style !== 'ramp' || w.shape.type !== 'polyline') continue;
+    for (const p of w.shape.points) {
+      if (Math.abs(p.x - xAt(ctx.left, p.y)) < 0.6) attachYs.left.push(p.y);
+      else if (Math.abs(p.x - xAt(ctx.right, p.y)) < 0.6) attachYs.right.push(p.y);
+    }
+  }
+  const isProt = (y: number): boolean => protect.some(([a, b]) => y > a - 1e-6 && y < b + 1e-6);
+  type Sub = { a: Vec; b: Vec; side: 'left' | 'right' | 'cap'; prot: boolean };
+  const subs: Sub[] = [];
+  for (let i = 0; i < chain.length - 1; i++) {
+    const a = chain[i];
+    const b = chain[i + 1];
+    const side: Sub['side'] = i < L - 1 ? 'left' : i >= L && i < 2 * L - 1 ? 'right' : 'cap';
+    const ts = [0, 1];
+    for (const [y0, y1] of protect) for (const yc of [y0, y1]) if ((a.y - yc) * (b.y - yc) < 0) ts.push((yc - a.y) / (b.y - a.y));
+    ts.sort((p, q) => p - q);
+    for (let k = 0; k < ts.length - 1; k++) {
+      if (ts[k + 1] - ts[k] < 1e-9) continue;
+      const pa = { x: a.x + (b.x - a.x) * ts[k], y: a.y + (b.y - a.y) * ts[k] };
+      const pb = { x: a.x + (b.x - a.x) * ts[k + 1], y: a.y + (b.y - a.y) * ts[k + 1] };
+      const n = Math.max(1, Math.ceil(Math.hypot(pb.x - pa.x, pb.y - pa.y) / 2));
+      for (let q = 0; q < n; q++) {
+        const f0 = q / n;
+        const f1 = (q + 1) / n;
+        const qa = { x: pa.x + (pb.x - pa.x) * f0, y: pa.y + (pb.y - pa.y) * f0 };
+        const qb = { x: pa.x + (pb.x - pa.x) * f1, y: pa.y + (pb.y - pa.y) * f1 };
+        subs.push({ a: qa, b: qb, side, prot: side === 'cap' || isProt((qa.y + qb.y) / 2) });
+      }
+    }
+  }
+  const tilt = 25 * DEG;
+  const last: Record<string, { r: WallReaction; sinceSlow: number }> = {
+    left: { r: 'solid', sinceSlow: 9 },
+    right: { r: 'solid', sinceSlow: 9 },
+  };
+  let i = 0;
+  while (i < subs.length) {
+    const first = subs[i];
+    const pts: Vec[] = [first.a];
+    let len = 0;
+    const target = rng.range(3.5, 6.5);
+    const roll = rng.next();
+    while (i < subs.length && subs[i].side === first.side && subs[i].prot === first.prot && (len < target || pts.length < 2) && pts.length < 10) {
+      pts.push(subs[i].b);
+      len += Math.hypot(subs[i].b.x - subs[i].a.x, subs[i].b.y - subs[i].a.y);
+      i++;
+    }
+    let reaction: WallReaction = 'solid';
+    let launchDir: Vec | undefined;
+    if (first.prot) {
+      if (first.side !== 'cap') last[first.side] = { r: 'solid', sinceSlow: 9 };
+    } else {
+      const st = last[first.side];
+      let want: WallReaction = roll < 0.45 ? 'solid' : roll < 0.75 ? 'bounce' : roll < 0.9 ? 'slow' : 'launch';
+      if (want !== 'solid' && !ok[want]) want = 'solid';
+      const y0 = Math.min(...pts.map((p) => p.y)) - 1.5;
+      const y1 = Math.max(...pts.map((p) => p.y)) + 1.5;
+      if (want === 'slow' && (st.sinceSlow < 3 || st.r === 'launch' || attachYs[first.side as 'left' | 'right'].some((y) => y > y0 && y < y1))) want = 'solid';
+      if (want === 'launch' && (st.r === 'launch' || st.r === 'slow')) want = 'solid';
+      reaction = want;
+      st.sinceSlow = want === 'slow' ? 0 : st.sinceSlow + 1;
+      st.r = want;
+      if (want === 'launch') {
+        const inward = first.side === 'left' ? 1 : -1;
+        launchDir = { x: Math.sin(tilt) * inward, y: Math.cos(tilt) };
+      }
+    }
+    const shape: StaticShape = { type: 'polyline', points: pts, thickness: BOUNDARY_THICK };
+    ctx.walls.push({ id: nid(ctx, 'b'), shape, reaction, boundary: true, style: 'wall', ...(launchDir ? { launchDir } : {}) });
+  }
+}
+
 export function generateMap(config: GameConfig, seed: number): MapDef {
   const rng = new Rng(seed);
+  laneLog.length = 0;
   const ctx = makeCtx(config, rng);
   const start = buildStart(ctx);
   const marks: { type: string; idx: number }[] = [{ type: 'start', idx: 0 }];
@@ -214,6 +326,12 @@ export function generateMap(config: GameConfig, seed: number): MapDef {
   const lethalRanges: [number, number, number][] = [];
   const nSeg = Math.max(0, Math.floor(config.map.segments));
   const regroupAt = planRegroups(config.map.regroups ?? 0, nSeg);
+  const wantSpecial: ('galton' | 'lanes')[] = [];
+  if (galtonAvailable(ctx)) wantSpecial.push('galton');
+  if (lanesAvailable(ctx)) wantSpecial.push('lanes');
+  const specialAt = planSpecials(nSeg, regroupAt, new Rng((seed ^ 0x47414c54) >>> 0), wantSpecial);
+  const usedType: Record<string, number> = {};
+  const maxSpecial = nSeg >= 12 ? 2 : 1;
   let lastRegroup: string | null = null;
   // monsters: separate Rng so the rest of the course never depends on monster settings
   const mrng = new Rng((seed ^ MONSTER_SEED_SALT) >>> 0);
@@ -224,30 +342,42 @@ export function generateMap(config: GameConfig, seed: number): MapDef {
   for (let i = 0; i < nSeg; i++) {
     let def: SegmentDef | null = regroupAt.has(i) ? pickRegroup(ctx, lastRegroup) : null;
     if (def) lastRegroup = def.type;
-    else def = pickSegment(ctx, prev, i === 0);
+    else if (specialAt.has(i)) def = LIBRARY.find((d) => d.type === specialAt.get(i)) as SegmentDef;
+    else def = pickSegment(ctx, prev, i === 0, usedType, maxSpecial);
+    usedType[def.type] = (usedType[def.type] ?? 0) + 1;
     marks.push({ type: def.type, idx: ctx.path.length - 1 });
     ctx.ramps = [];
     const segStartY = ctx.y;
     def.run(ctx);
+    if (REDIRECTING.has(def.type)) ctx.lastGap = 0;
     if (!def.ownSwitch) maybeSwitch(ctx, false);
     segRecs.push({ type: def.type, y0: segStartY, y1: ctx.y, regroup: !!def.regroup });
     if (LETHAL_SIDE_SEGMENTS.has(def.type)) lethalRanges.push([segStartY, ctx.y, BOUNCY_SEGMENTS.has(def.type) ? 1 : 0]);
     prev = def.type;
     for (const ak of arenas.get(i) ?? []) {
       marks.push({ type: ak === 'octopus' ? 'octopus' : 'snakePit', idx: ctx.path.length - 1 });
+      if (ak === 'octopus') ctx.lastGap = 0;
       if (ak === 'octopus') {
         const o = buildOctopusArena(ctx, mrng, 'mo');
         segRecs.push(o.rec);
         fixedMonsters.push(o.monster);
       } else segRecs.push(buildSnakePit(ctx));
     }
-    if (i < nSeg - 1 && rng.bool(0.5)) {
-      let dx = rng.range(2, 4.5) * rng.sign();
-      if (Math.abs(ctx.cx + dx) > 6) dx = -dx;
-      chicane(ctx, dx);
+    // chicanes always alternate direction (never two in a row to the same side), within |cx| <= 6
+    const doChicane = rng.bool(0.5);
+    const mag = rng.range(2, 4.5);
+    const sg = rng.sign();
+    if (i < nSeg - 1 && doChicane) {
+      const dir = ctx.lastChicane !== 0 ? -ctx.lastChicane : sg;
+      const dx = Math.min(mag, 6 - dir * ctx.cx);
+      if (dx >= 2) {
+        chicane(ctx, dir * dx);
+        ctx.lastChicane = dir;
+      }
     }
   }
   marks.push({ type: 'finish', idx: ctx.path.length - 1 });
+  const finishY0 = ctx.y;
   const finish = buildFinish(ctx);
   const endIdx = ctx.path.length - 1;
   let monstersCanon: Monster[] = [];
@@ -273,7 +403,11 @@ export function generateMap(config: GameConfig, seed: number): MapDef {
     const ordered = krng.shuffle([...lethalRanges]).sort((a, b) => a[2] - b[2]);
     killRanges = ordered.slice(0, k).map(([y0, y1]) => [y0, y1] as [number, number]);
   }
-  emitBoundary(ctx, chain, killRanges);
+  if (config.walls.boundary === 'mixed') {
+    const protect: Range[] = [[-Infinity, 2], [finishY0, Infinity]];
+    for (const rec of segRecs) if (rec.regroup || rec.type === 'galton' || rec.type === 'lanes') protect.push([rec.y0, rec.y1]);
+    emitMixed(ctx, chain, protect, new Rng((seed ^ 0x6d697864) >>> 0));
+  } else emitBoundary(ctx, chain, killRanges);
 
   // segment info
   const cum = cumulativeLengths(ctx.path);

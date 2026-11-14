@@ -613,7 +613,7 @@ export class Renderer {
   }
 
   private reactionOf(w: Wall): WallReaction {
-    return w.boundary ? this.config.walls.boundary : w.reaction;
+    return w.boundary && this.config.walls.boundary !== 'mixed' ? this.config.walls.boundary : w.reaction;
   }
 
   private drawWall(w: Wall, t: number): void {

@@ -31,7 +31,8 @@ export interface Wall {
   id: string;
   shape: StaticShape;
   reaction: WallReaction;
-  /** True for the course's outer side walls (reaction comes from config.walls.boundary). */
+  /** True for the course's outer side walls (reaction comes from config.walls.boundary, or from
+   *  `reaction` itself when that mode is 'mixed'). */
   boundary?: boolean;
   /** For 'launch': unit direction of the kick. If absent, kick along the contact normal (away from wall). */
   launchDir?: Vec;

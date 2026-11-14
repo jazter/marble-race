@@ -159,7 +159,7 @@ class SimImpl implements Simulation {
   private buildWalls(): void {
     const { map, config } = this;
     map.walls.forEach((w, i) => {
-      const reaction: WallReaction = w.boundary ? config.walls.boundary : w.reaction;
+      const reaction: WallReaction = w.boundary && config.walls.boundary !== 'mixed' ? config.walls.boundary : w.reaction;
       this.wallReaction.push(reaction);
       this.keyOfWall.push(i);
       const body = this.world.createBody({ type: 'static', position: new Vec2(0, 0) });

@@ -12,6 +12,12 @@
 
 export type WallReaction = 'solid' | 'bounce' | 'slow' | 'kill' | 'launch';
 export type SpecialWallReaction = Exclude<WallReaction, 'solid'>;
+/**
+ * Outer-wall mode: one reaction for every outer wall, or 'mixed' — the generator
+ * gives each outer-wall piece its own reaction (mostly solid, with bounce, slow
+ * and downstream launch pieces; never kill) stored in Wall.reaction.
+ */
+export type BoundaryMode = WallReaction | 'mixed';
 
 /** Effects that modifier objects (mechanisms and zones) apply to marbles. */
 export type EffectType = 'grow' | 'shrink' | 'destroy' | 'attract' | 'repel';
@@ -88,8 +94,8 @@ export interface GameConfig {
   };
 
   walls: {
-    /** Reaction of the course's outer side walls. */
-    boundary: WallReaction;
+    /** Reaction of the course's outer side walls ('mixed' = per-piece reactions chosen by the generator). */
+    boundary: BoundaryMode;
     /** Which special reactions interior walls may get. */
     special: Record<SpecialWallReaction, boolean>;
     /** 0..1 fraction of interior walls that receive a special reaction. */
@@ -196,7 +202,7 @@ export function defaultConfig(): GameConfig {
       linearDamping: 0.05,
     },
     walls: {
-      boundary: 'solid',
+      boundary: 'mixed',
       special: { bounce: true, slow: true, kill: true, launch: true },
       specialRatio: 0.25,
       bounceRestitution: 1.1,
