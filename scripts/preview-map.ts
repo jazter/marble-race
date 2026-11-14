@@ -1,0 +1,93 @@
+/** Usage: npx tsx scripts/preview-map.ts [seed] [gravityAngle] [count] -> PNG tiles in $PREVIEW_DIR (default screenshots/gen-preview) */
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
+// Playwright is a dev-only tool here (global or local install).
+const { chromium } = createRequire(import.meta.url)('playwright');
+const OUT_DIR = process.env.PREVIEW_DIR ?? 'screenshots/gen-preview';
+import { defaultConfig } from '../src/core/config';
+import { generateMap } from '../src/gen';
+import type { MapDef, Vec, LocalShape } from '../src/core/types';
+import { rotate } from '../src/core/math';
+
+const seed = Number(process.argv[2] ?? 1);
+const ga = Number(process.argv[3] ?? 0);
+const count = Number(process.argv[4] ?? 20);
+const cfg = defaultConfig();
+cfg.physics.gravityAngle = ga;
+cfg.marbles.count = count;
+const map: MapDef = generateMap(cfg, seed);
+
+const S = 14; // px per metre
+const b = map.bounds;
+const X = (x: number) => ((x - b.minX) * S).toFixed(1);
+const Y = (y: number) => ((y - b.minY) * S).toFixed(1);
+const pts = (a: Vec[]) => a.map((p) => `${X(p.x)},${Y(p.y)}`).join(' ');
+const col: Record<string, string> = { solid: '#c9d1e0', bounce: '#4fd1ff', slow: '#d9a441', kill: '#ff4d4d', launch: '#6bff6b' };
+let o = '';
+const flowAng = Math.atan2(map.flowDir.x, map.flowDir.y); // canonical y-down -> rotate local by -ga
+void flowAng;
+for (const w of map.walls) {
+  const c = w.boundary ? '#6b7a99' : col[w.reaction];
+  const s = w.shape;
+  if (s.type === 'polyline') o += `<polyline points="${pts(s.points)}" fill="none" stroke="${c}" stroke-width="${s.thickness * S}" stroke-linejoin="round" stroke-linecap="round"/>`;
+  else if (s.type === 'polygon') o += `<polygon points="${pts(s.points)}" fill="${c}"/>`;
+  else o += `<circle cx="${X(s.center.x)}" cy="${Y(s.center.y)}" r="${s.radius * S}" fill="${c}"/>`;
+  if (w.launchDir && s.type !== 'circle') {
+    const p = s.points[0];
+    o += `<line x1="${X(p.x)}" y1="${Y(p.y)}" x2="${X(p.x + w.launchDir.x * 2)}" y2="${Y(p.y + w.launchDir.y * 2)}" stroke="#6bff6b"/>`;
+  }
+}
+for (const g of map.gates) if (g.shape.type === 'polygon') o += `<polygon points="${pts(g.shape.points)}" fill="${g.role === 'start' ? '#ffaa00' : '#ff00ff'}"/>`;
+for (const z of map.zones) {
+  const c = { grow: '#3f3', shrink: '#f6f', attract: '#39f', repel: '#f93', destroy: '#f33' }[z.effect];
+  if (z.shape.type === 'circle') o += `<circle cx="${X(z.shape.center.x)}" cy="${Y(z.shape.center.y)}" r="${z.shape.radius * S}" fill="${c}" fill-opacity=".3" stroke="${c}"/>`;
+}
+const ecol: Record<string, string> = { grow: '#3f3', shrink: '#f6f', attract: '#39f', repel: '#f93', destroy: '#f33' };
+function shapeSvg(sh: LocalShape, pos: Vec, ang: number, fill: string): string {
+  const T = (p: Vec) => { const r = rotate(p, ang); return { x: pos.x + r.x, y: pos.y + r.y }; };
+  if (sh.type === 'circle') { const c = T({ x: sh.cx, y: sh.cy }); return `<circle cx="${X(c.x)}" cy="${Y(c.y)}" r="${sh.r * S}" fill="${fill}"/>`; }
+  if (sh.type === 'polygon') return `<polygon points="${pts(sh.points.map(T))}" fill="${fill}"/>`;
+  const q = [{ x: -sh.hw, y: -sh.hh }, { x: sh.hw, y: -sh.hh }, { x: sh.hw, y: sh.hh }, { x: -sh.hw, y: sh.hh }].map((p) => { const r = rotate(p, sh.angle); return T({ x: r.x + sh.cx, y: r.y + sh.cy }); });
+  return `<polygon points="${pts(q)}" fill="${fill}"/>`;
+}
+for (const m of map.mechanisms) {
+  const fill = m.effect ? ecol[m.effect] : '#e8e8e8';
+  let pos = m.pivot; let ang = 0;
+  m.links.forEach((l, i) => {
+    const mo = l.motion;
+    const rel = mo.type === 'rotate' ? mo.phase : mo.center + mo.amplitude * Math.sin(mo.phase);
+    ang += rel;
+    o += l.shapes.map((s) => shapeSvg(s, pos, ang, fill)).join('');
+    if (l.tip) { const t = rotate(l.tip, ang); pos = { x: pos.x + t.x, y: pos.y + t.y }; }
+    if (i === m.links.length - 1 && m.fieldRadius && m.fieldAnchor) {
+      const a = rotate(m.fieldAnchor, ang);
+      o += `<circle cx="${X(pos.x + a.x)}" cy="${Y(pos.y + a.y)}" r="${m.fieldRadius * S}" fill="none" stroke="${fill}" stroke-dasharray="4 3"/>`;
+    }
+  });
+}
+for (const s of map.switches) {
+  const w = s.halfWidth, h = s.halfHeight;
+  const q = [{ x: -w, y: -h }, { x: w, y: -h }, { x: w, y: h }, { x: -w, y: h }].map((p) => { const r = rotate(p, s.angle); return { x: s.position.x + r.x, y: s.position.y + r.y }; });
+  o += `<polygon points="${pts(q)}" fill="#ffee00" stroke="#000" stroke-width=".5"/><text x="${X(s.position.x + 1)}" y="${Y(s.position.y - 1)}" fill="#ffee00" font-size="11">${s.label}${s.action.gateId ? ' ->' + s.action.gateId : ''}</text>`;
+}
+for (const p of map.start.spawnPoints) o += `<circle cx="${X(p.x)}" cy="${Y(p.y)}" r="${cfg.marbles.radius * S}" fill="#fff" fill-opacity=".7"/>`;
+o += `<line x1="${X(map.finish.a.x)}" y1="${Y(map.finish.a.y)}" x2="${X(map.finish.b.x)}" y2="${Y(map.finish.b.y)}" stroke="#0f0" stroke-width="3"/>`;
+o += `<polyline points="${pts(map.path)}" fill="none" stroke="#f0f" stroke-width="1" stroke-dasharray="3 3"/>`;
+o += map.path.map((p) => `<circle cx="${X(p.x)}" cy="${Y(p.y)}" r="1.5" fill="#f0f"/>`).join('');
+const Wd = Math.ceil((b.maxX - b.minX) * S), Hd = Math.ceil((b.maxY - b.minY) * S);
+const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${Wd}" height="${Hd}" viewBox="0 0 ${Wd} ${Hd}"><rect width="100%" height="100%" fill="${map.theme.background}"/>${o}</svg>`;
+mkdirSync(OUT_DIR, { recursive: true });
+const base = `${OUT_DIR}/s${seed}_g${ga}_n${count}`;
+writeFileSync(base + '.svg', svg);
+console.log('segments', map.segments.map((s) => `${s.type}[${s.from.toFixed(0)}-${s.to.toFixed(0)}]`).join(' '));
+console.log('size', Wd, Hd, 'walls', map.walls.length, 'mechs', map.mechanisms.length, 'switches', map.switches.length, 'zones', map.zones.length);
+const browser = await chromium.launch();
+const tileH = 1500;
+const tiles = Math.ceil(Hd / tileH);
+const page = await browser.newPage({ viewport: { width: Wd, height: Math.min(tileH, Hd) }, deviceScaleFactor: 1 });
+await page.setContent(`<body style="margin:0;background:#000">${svg}</body>`);
+for (let i = 0; i < tiles; i++) {
+  await page.screenshot({ path: `${base}_${i}.png`, clip: { x: 0, y: i * tileH, width: Wd, height: Math.min(tileH, Hd - i * tileH) }, fullPage: true });
+  console.log(`${base}_${i}.png`);
+}
+await browser.close();
