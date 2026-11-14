@@ -48,7 +48,7 @@ Todas las opciones están en el panel lateral (⚙ en móvil). *Restablecer valo
 
 | Opción | Por defecto |
 |---|---|
-| Reacción de paredes exteriores | Sólida (también: rebote, lenta, eliminar, lanzar) |
+| Reacción de paredes exteriores | Mixta: cada tramo con su propia reacción (sobre todo sólida, con rebote, lenta y lanzadores que empujan a favor del recorrido; nunca eliminar). También: sólida, rebote, lenta, eliminar, lanzar |
 | Tipos de paredes especiales | Rebote, lenta, eliminar, lanzar |
 | Proporción de especiales | 25 % |
 | Rebote / lentitud / lanzamiento | 1.1 / 85 % / 12 m/s |
@@ -89,8 +89,7 @@ Todas las opciones están en el panel lateral (⚙ en móvil). *Restablecer valo
 |---|---|
 | Modo | Líder (también: pelotón, camino, scroll automático) |
 | Ancho de vista | 30 m |
-| Eliminar canicas fuera de cámara | No (si se activa, tiempo de gracia de 2 s) |
-| Velocidad de scroll | 1.5 m/s (la cámara avanza al menos a esta velocidad y nunca deja escapar al líder por abajo) |
+| Velocidad de scroll | 1.5 m/s (la cámara avanza al menos a esta velocidad y nunca pierde al líder) |
 
 **Carrera**
 

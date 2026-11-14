@@ -83,7 +83,7 @@ export const SECTIONS: Section[] = [
     title: 'Paredes',
     icon: '🧱',
     fields: [
-      { kind: 'select', label: 'Reacción de paredes exteriores', path: 'walls.boundary', options: REACTIONS },
+      { kind: 'select', label: 'Reacción de paredes exteriores', path: 'walls.boundary', options: [['mixed', 'Mixta'], ...REACTIONS] },
       {
         kind: 'checks',
         label: 'Tipos de paredes especiales',
@@ -198,8 +198,6 @@ export const SECTIONS: Section[] = [
         ],
       },
       { kind: 'range', label: 'Ancho de vista', path: 'camera.viewWidth', min: 10, max: 80, step: 1, unit: ' m' },
-      { kind: 'toggle', label: 'Eliminar canicas fuera de cámara', path: 'camera.offscreenKill' },
-      { kind: 'range', label: 'Tiempo de gracia', path: 'camera.offscreenGrace', min: 0, max: 10, step: 0.5, unit: ' s', decimals: 1, enabledIf: (c) => c.camera.offscreenKill },
       { kind: 'range', label: 'Velocidad de scroll', path: 'camera.scrollSpeed', min: 0.5, max: 6, step: 0.1, unit: ' m/s', decimals: 1, enabledIf: (c) => c.camera.mode === 'scroll' },
     ],
   },

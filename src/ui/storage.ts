@@ -24,6 +24,8 @@ export function loadConfig(): GameConfig {
   } catch {
     /* storage unavailable or corrupt: use defaults */
   }
+  // Off-camera elimination was removed from the UI; never revive it from an old saved config.
+  cfg.camera.offscreenKill = false;
   return cfg;
 }
 
