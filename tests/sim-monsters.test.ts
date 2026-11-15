@@ -366,3 +366,35 @@ describe('monsters', () => {
     sim.destroy();
   });
 });
+
+describe('release immunity', () => {
+  it('a released marble is not grabbed again by any monster for 1 s', async () => {
+    const { defaultConfig } = await import('../src/core/config');
+    const { generateMap } = await import('../src/gen');
+    const { createRoster } = await import('../src/core/roster');
+    let releases = 0;
+    for (const seed of [1, 2, 3, 4]) {
+      const cfg = defaultConfig();
+      cfg.monsters.destroyChance = 0; // only releases, so marbles can be re-caught
+      cfg.monsters.count = 8;
+      const map = generateMap(cfg, seed);
+      const sim = createSimulation(map, createRoster(cfg, seed), cfg);
+      const lastRelease = new Map<number, number>();
+      while (!sim.isOver() && sim.time < 150) {
+        sim.step();
+        for (const e of sim.drainEvents()) {
+          if (e.type !== 'monster') continue;
+          if (e.action === 'release') {
+            lastRelease.set(e.marbleId, e.t);
+            releases++;
+          } else if (e.action === 'grab') {
+            const r = lastRelease.get(e.marbleId);
+            if (r !== undefined) expect(e.t - r).toBeGreaterThanOrEqual(1 - 1e-6);
+          }
+        }
+      }
+      sim.destroy();
+    }
+    expect(releases).toBeGreaterThan(5);
+  });
+});

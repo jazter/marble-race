@@ -127,7 +127,8 @@ export function mockFrame(time: number): MockFrame {
     const base = mid;
     for (let i = 0; i < 8; i++) {
       const a = d.facing + Math.PI + ((i + 0.5) / 8) * Math.PI * 2;
-      const rest: Vec = { x: d.center.x + Math.cos(a + 0.35) * d.bodyRadius * 1.9, y: d.center.y + Math.sin(a + 0.35) * d.bodyRadius * 1.9 };
+      const rr = d.bodyRadius + 0.74 * (d.reach - d.bodyRadius); // same rest length as the sim
+      const rest: Vec = { x: d.center.x + Math.cos(a + 0.35) * rr, y: d.center.y + Math.sin(a + 0.35) * rr };
       const tgtA = a + 0.15 * Math.sin(i * 3.1);
       const tgt: Vec = { x: d.center.x + Math.cos(tgtA) * 4.2, y: d.center.y + Math.sin(tgtA) * 4.2 };
       let tip = rest;

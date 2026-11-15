@@ -24,12 +24,19 @@ export interface MonsterHost {
 }
 
 const EPS = 1e-9;
+/** Seconds a released marble can't be caught again by ANY monster (avoids grab loops). */
+const RELEASE_IMMUNITY = 1;
+interface Shared {
+  now: number;
+  immuneUntil: Map<number, number>;
+}
+const SHARED = new WeakMap<MonsterHost, Shared>();
 /** Spider silk drop speed (m/s, x monsters.speed): fast enough to reach rolling marbles. */
 const SPIDER_DROP_SPEED = 12;
 /** Fish / snake can swerve sideways off their lane toward a nearby marble. */
 const SWERVE = {
   fish: { maxDev: 1.6, speed: 5, ahead: 3.5, side: 2.6 },
-  snake: { maxDev: 1.2, speed: 4, ahead: 3, side: 2.2 },
+  snake: { maxDev: 2.0, speed: 5.5, ahead: 4, side: 3.2 },
 } as const;
 
 abstract class Base<M extends Monster> {
@@ -52,7 +59,10 @@ abstract class Base<M extends Monster> {
   }
 
   protected catchable(m: MarbleState): boolean {
-    return m.status === 'racing' && m.heldBy === undefined;
+    if (m.status !== 'racing' || m.heldBy !== undefined) return false;
+    const sh = SHARED.get(this.h);
+    const until = sh?.immuneUntil.get(m.id);
+    return until === undefined || (sh as Shared).now >= until - EPS;
   }
 
   protected place(m: MarbleState, x: number, y: number): void {
@@ -78,6 +88,7 @@ abstract class Base<M extends Monster> {
       this.h.devour(m);
     } else {
       this.h.release(m, x, y, vx, vy);
+      SHARED.get(this.h)?.immuneUntil.set(m.id, t + RELEASE_IMMUNITY);
       this.h.emit({ ...base, action: 'release' });
     }
     return devour;
@@ -258,7 +269,7 @@ class Octopus extends Base<MonsterOf<'octopus'>> {
   private rest(i: number, t: number): Vec {
     const d = this.def;
     const a = this.ten[i]?.ang ?? d.facing + (2 * Math.PI * (i + 0.5)) / Math.max(1, Math.round(d.tentacles));
-    const r = d.bodyRadius + 0.6 * (d.reach - d.bodyRadius) + 0.15 * Math.sin(1.7 * t + i);
+    const r = d.bodyRadius + 0.74 * (d.reach - d.bodyRadius) + 0.15 * Math.sin(1.7 * t + i);
     const off = 0.3 * Math.sin(2.3 * t + i * 1.3);
     const ca = Math.cos(a);
     const sa = Math.sin(a);
@@ -425,8 +436,37 @@ class Crosser extends Base<Traveller> {
     const d = this.def;
     if (d.kind === 'fish') this.setLine(d.a, d.b);
     else if (d.passes.length) {
-      const p = d.passes[this.h.rng.int(0, d.passes.length - 1)];
-      if (this.h.rng.bool()) this.setLine(p.b, p.a);
+      // random pick first (keeps the Rng sequence stable), then head for the crossing line
+      // that has the most catchable marbles near it, so snakes go where the marbles are
+      let pi = this.h.rng.int(0, d.passes.length - 1);
+      let rev = this.h.rng.bool();
+      let best = 0;
+      for (let k = 0; k < d.passes.length; k++) {
+        const { a, b } = d.passes[k];
+        const vx = b.x - a.x;
+        const vy = b.y - a.y;
+        const l2 = vx * vx + vy * vy || 1;
+        let score = 0;
+        let nearA = 0;
+        for (const m of this.h.marbles) {
+          if (!this.catchable(m)) continue;
+          const u = ((m.x - a.x) * vx + (m.y - a.y) * vy) / l2;
+          if (u < 0 || u > 1) continue;
+          const px = a.x + vx * u - m.x;
+          const py = a.y + vy * u - m.y;
+          if (px * px + py * py > 2.4 * 2.4) continue;
+          score++;
+          nearA += 1 - u;
+        }
+        if (score > best) {
+          best = score;
+          pi = k;
+          // start from the end closest to where those marbles are
+          rev = nearA < score / 2;
+        }
+      }
+      const p = d.passes[pi];
+      if (rev) this.setLine(p.b, p.a);
       else this.setLine(p.a, p.b);
     }
     this.waiting = false;
@@ -537,7 +577,10 @@ class Crosser extends Base<Traveller> {
 export class MonsterSystem {
   private list: (Spider | Octopus | Crosser)[] = [];
 
+  private readonly shared: Shared = { now: 0, immuneUntil: new Map() };
+
   constructor(defs: readonly Monster[], host: MonsterHost) {
+    SHARED.set(host, this.shared);
     for (const d of defs) {
       switch (d.kind) {
         case 'spider':
@@ -557,6 +600,7 @@ export class MonsterSystem {
   }
 
   update(t: number, dt: number): void {
+    this.shared.now = t;
     for (const m of this.list) m.update(t, dt);
   }
 

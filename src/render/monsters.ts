@@ -177,7 +177,7 @@ export function restState(def: Monster): MonsterState {
       const tentacles: TentacleState[] = [];
       for (let i = 0; i < def.tentacles; i++) {
         const a = def.facing + Math.PI + ((i + 0.5) / def.tentacles) * TAU;
-        const r = def.bodyRadius * 1.9;
+        const r = def.bodyRadius + 0.74 * (def.reach - def.bodyRadius); // same rest length as the sim
         tentacles.push({ x: def.center.x + Math.cos(a + 0.35) * r, y: def.center.y + Math.sin(a + 0.35) * r, state: 'idle' });
       }
       return { id: def.id, kind: 'octopus', phase: 'idle', phaseTime: 0, x: def.center.x, y: def.center.y, angle: def.facing, visible: 1, holding: [], tentacles };
