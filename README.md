@@ -93,6 +93,7 @@ Todas las opciones están en el panel lateral (⚙ en móvil). *Restablecer valo
 | Opción | Por defecto |
 |---|---|
 | Fondo | Automático (tema liso del mapa). También: fondo del mar, espacio, nubes, dinosaurios y castillo: escenas dibujadas por código con capas de paralaje. Solo cambia el aspecto: se aplica al instante, incluso en plena carrera, y no obliga a regenerar el mapa. Con «reducir movimiento» activo en el sistema no hay animaciones ambientales |
+| Mantener la pantalla encendida | Sí: en teléfonos y tablets la pantalla no se apaga mientras se ve el mapa o la carrera (Screen Wake Lock; Chrome/Android, Safari iOS 16.4+, Firefox 126+) |
 
 **Cámara**
 

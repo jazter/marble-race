@@ -20,6 +20,7 @@ import { customOf, labelNode, marbleCanvas } from './ui/marbleLabel';
 import { clearCustomNames, getAllCustomNames, onNamesChanged } from './ui/names';
 import { hidePodium, showPodium } from './ui/podium';
 import { initSoundControls } from './ui/sound';
+import { setKeepAwake } from './ui/wakeLock';
 import { clearSavedConfig, loadAudioSettings, loadConfig, saveAudioSettings, saveConfig } from './ui/storage';
 
 type Mode = 'idle' | 'generating' | 'error' | 'preview' | 'race';
@@ -68,6 +69,7 @@ const panel = new ConfigPanel($('config-sections'), config, (c) => {
   saveConfig(c);
   // Scenery applies immediately, even mid-race (the race itself runs on a config snapshot).
   renderer.setBackground(c.display.background);
+  updateKeepAwake();
   const sig = genSig(c);
   const changed = sig !== lastSig;
   lastSig = sig;
@@ -118,8 +120,14 @@ $('btn-reset').addEventListener('click', () => {
 
 /* ------------------------------------------------------------ modes */
 
+/** Keep the screen on (like a video) while a map is previewed or a race is shown. */
+function updateKeepAwake(): void {
+  setKeepAwake(config.display.keepAwake && (mode === 'race' || mode === 'preview' || mode === 'generating'));
+}
+
 function setMode(m: Mode): void {
   mode = m;
+  queueMicrotask(updateKeepAwake);
   document.body.className = document.body.className.replace(/\bmode-\w+/g, '').trim() + ` mode-${m}`;
   $('welcome').classList.toggle('show', m === 'idle');
   $('progress').classList.toggle('show', m === 'generating');

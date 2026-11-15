@@ -85,6 +85,7 @@ export const SECTIONS: Section[] = [
           ['castle', 'Castillo'],
         ],
       },
+      { kind: 'toggle', label: 'Mantener la pantalla encendida', path: 'display.keepAwake', hint: 'Evita que el teléfono o la tablet se apague durante el mapa y la carrera' },
     ],
   },
   {

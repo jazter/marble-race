@@ -142,6 +142,8 @@ export interface GameConfig {
   display: {
     /** Scenery drawn behind the course; 'auto' = the map's own plain theme. Visual only. */
     background: BackgroundKind;
+    /** Keep the phone/tablet screen on while a map or race is shown (Screen Wake Lock). */
+    keepAwake: boolean;
   };
 
   camera: {
@@ -260,6 +262,7 @@ export function defaultConfig(): GameConfig {
     },
     display: {
       background: 'auto',
+      keepAwake: true,
     },
     camera: {
       mode: 'leader',
