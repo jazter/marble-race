@@ -19,6 +19,9 @@ Controles durante la carrera:
 | ↺ Reiniciar | Repite exactamente la misma carrera (la simulación es determinista) |
 | 🗺️ Nuevo mapa | Genera otro mapa |
 | Vista previa | Zoom y desplazamiento con ratón o pantalla táctil |
+| ⭐ Guardar mapa | En la vista previa, en la preparación y en el podio: guarda el mapa con el nombre que elijas (máx. 30, en el navegador) |
+
+**Mis mapas** (panel, tras *Apariencia*; también 📂 en la pantalla de inicio): lista de mapas guardados con *▶ Cargar*, ✎ renombrar y 🗑 borrar. *⬇ Exportar* descarga todos en un `.json` y *⬆ Importar* los añade en otro dispositivo (omite repetidos). Se guarda el mapa completo, así que no cambia aunque el generador cambie; al cargarlo se vuelve a comprobar con la física actual.
 
 ## Opciones
 

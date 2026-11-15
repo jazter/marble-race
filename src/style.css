@@ -291,3 +291,20 @@ body.monsters-demo #app { grid-template-columns: 1fr !important; }
   #panel { right: auto; width: min(440px, 86vw); box-shadow: 12px 0 40px #000a; }
   body.panel-open #panel-backdrop { display: block; position: fixed; inset: 0; z-index: 29; background: #05070bb3; }
 }
+
+/* ---------- saved maps ---------- */
+.app-toast { position: fixed; left: 50%; bottom: calc(90px + env(safe-area-inset-bottom)); transform: translate(-50%, 12px); z-index: 90; background: #0e1320f2; border: 1px solid #ffffff2e; border-left: 3px solid var(--good); border-radius: 10px; padding: 9px 16px; font-weight: 600; opacity: 0; pointer-events: none; transition: opacity .2s, transform .2s; max-width: calc(100% - 24px); }
+.app-toast.show { opacity: 1; transform: translate(-50%, 0); }
+[hidden] { display: none !important; }
+#welcome .card .btn + .btn { margin-top: 8px; }
+.maps-list { display: grid; gap: 8px; }
+.map-item { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 9px 10px; display: grid; gap: 6px; }
+.map-name { font-weight: 700; overflow-wrap: anywhere; }
+.map-meta { color: var(--muted); font-size: 12px; }
+.map-actions { display: flex; gap: 6px; align-items: center; }
+.map-actions .grow { flex: 1; }
+.maps-tools { display: flex; gap: 8px; flex-wrap: wrap; }
+.maps-tools .btn { flex: 1; }
+.maps-empty { margin: 0; color: var(--muted); font-size: 13px; }
+.maps-msg { margin: 0; font-size: 12.5px; color: var(--accent); }
+#checking .card { text-align: center; }

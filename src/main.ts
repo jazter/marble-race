@@ -1,6 +1,7 @@
 /// <reference types="vite/client" />
 import './style.css';
 import { SIM_DT, defaultConfig, type GameConfig } from './core/config';
+import { createRoster } from './core/roster';
 import { cumulativeLengths } from './core/math';
 import { MusicDirector } from './audio/director';
 import { MusicEngine } from './audio/music';
@@ -8,10 +9,12 @@ import { sampleMap } from './core/fixtures';
 import { Renderer } from './render/renderer';
 import { createSimulation } from './sim';
 import type { Simulation } from './sim';
-import { generateValidatedRace, type ValidatedRace } from './validate/validator';
+import { generateValidatedRace, runValidation, requiredFinishers, type ValidatedRace } from './validate/validator';
 import { ConfigPanel } from './ui/configPanel';
 import { $, el } from './ui/dom';
-import { isDialogOpen, openConfirm, openNaming } from './ui/dialogs';
+import { isDialogOpen, openConfirm, openInfo, openNaming, openTextPrompt, showToast } from './ui/dialogs';
+import { MapsPanel } from './ui/mapsPanel';
+import { MAX_SAVED_MAPS, findDuplicate, listMaps, saveMap, type SavedMap } from './ui/savedMaps';
 import { Hud } from './ui/hud';
 import { customOf, labelNode, marbleCanvas } from './ui/marbleLabel';
 import { clearCustomNames, getAllCustomNames, onNamesChanged } from './ui/names';
@@ -40,6 +43,11 @@ let configDirty = false;
 let podiumTimer: number | undefined;
 let podiumShown = false;
 let director: MusicDirector | null = null;
+/** Name of the saved map the current race was loaded from (null for generated maps). */
+let loadedName: string | null = null;
+/** Set when a re-check of a loaded map found fewer finishers than currently required. */
+let loadWarn = false;
+let loading = false;
 
 const music = new MusicEngine(loadAudioSettings());
 initSoundControls(music, saveAudioSettings);
@@ -79,6 +87,23 @@ $('btn-open-panel').addEventListener('click', openPanel);
 $('btn-close-panel').addEventListener('click', closePanel);
 $('panel-backdrop').addEventListener('click', closePanel);
 
+const mapsPanel = new MapsPanel(
+  $('config-sections').querySelectorAll('details.sec')[1] ?? null,
+  $('config-sections'),
+  {
+    onLoad: (m) => void loadSavedMap(m),
+    onChange: (n) => {
+      const b = $('btn-welcome-maps');
+      b.hidden = n === 0;
+      b.textContent = `📂 Mis mapas (${n})`;
+    },
+  },
+);
+$('btn-welcome-maps').addEventListener('click', () => {
+  openPanel();
+  mapsPanel.reveal();
+});
+
 $('btn-reset').addEventListener('click', () => {
   clearSavedConfig();
   config = defaultConfig();
@@ -117,7 +142,7 @@ const progressBar = $('progress-bar');
 const progressLog = $('progress-log');
 
 async function generate(randomSeed = false): Promise<void> {
-  if (mode === 'generating') return;
+  if (mode === 'generating' || loading) return;
   if (randomSeed) {
     config.seed = 1 + Math.floor(Math.random() * 999999);
     panel.refresh();
@@ -151,6 +176,8 @@ async function generate(randomSeed = false): Promise<void> {
     });
     race = vr;
     raceConfig = cfg;
+    loadedName = null;
+    loadWarn = false;
     configDirty = false;
     renderer.setConfig(cfg);
     renderer.setMap(vr.map);
@@ -186,12 +213,92 @@ function updatePreviewInfo(): void {
   if (!race || mode !== 'preview') return;
   info.innerHTML = '';
   const add = (label: string, value: string) => info.append(el('span', {}, [`${label}: `, el('b', {}, value)]));
-  add('Semilla aceptada', String(race.seed));
-  add('Intentos', String(race.attempts));
+  if (loadedName) add('Mapa guardado', loadedName);
+  add('Semilla', String(race.seed));
+  if (!loadedName) add('Intentos', String(race.attempts));
   add('Primera llegada en validación', `≈ ${race.firstFinishTime.toFixed(1)} s`);
   add('Canicas', String(race.roster.length));
+  if (loadWarn) info.append(el('span', { class: 'warn' }, 'Con la versión actual quizá lleguen menos canicas.'));
   if (configDirty) info.append(el('span', { class: 'warn' }, 'La configuración cambió: genera de nuevo para aplicarla.'));
 }
+
+/* ------------------------------------------------------- saved maps */
+
+const fill = (dst: Record<string, unknown>, src: Record<string, unknown>): void => {
+  for (const k of Object.keys(src)) {
+    const dv = dst[k];
+    const sv = src[k];
+    if (!(k in dst)) dst[k] = sv;
+    else if (dv && sv && typeof dv === 'object' && typeof sv === 'object' && !Array.isArray(dv)) fill(dv as Record<string, unknown>, sv as Record<string, unknown>);
+  }
+};
+
+async function loadSavedMap(m: SavedMap): Promise<void> {
+  if (loading || mode === 'generating') return;
+  loading = true;
+  if (isCompact()) closePanel();
+  disposeRace();
+  $('checking').classList.add('show');
+  try {
+    // let the overlay paint before the (synchronous, ~1-2 s) re-validation
+    await new Promise<void>((r) => requestAnimationFrame(() => setTimeout(r, 0)));
+    const cfg = structuredClone(m.config);
+    fill(cfg as unknown as Record<string, unknown>, defaultConfig() as unknown as Record<string, unknown>); // fields added since it was saved
+    cfg.display = structuredClone(config.display); // scenery follows the current setting
+    const roster = createRoster(cfg, m.seed, Object.keys(getAllCustomNames()));
+    let finishers = requiredFinishers(cfg);
+    let firstFinishTime = m.firstFinishTime;
+    try {
+      const v = runValidation(m.map, roster, cfg);
+      finishers = v.finishers;
+      if (v.ok) firstFinishTime = v.firstFinishTime;
+      loadWarn = !v.ok;
+    } catch {
+      loadWarn = true;
+    }
+    race = { map: m.map, roster, seed: m.seed, attempts: 1, firstFinishTime, validationFinishers: finishers, rejected: [] };
+    raceConfig = cfg;
+    loadedName = m.name;
+    configDirty = false;
+    renderer.setConfig(cfg);
+    renderer.setMap(m.map);
+    setMode('preview');
+    updatePreviewInfo();
+  } finally {
+    $('checking').classList.remove('show');
+    loading = false;
+  }
+}
+
+/** "Guardar mapa": ask for a name, then store the current map in localStorage. */
+function saveCurrentMap(): void {
+  if (!race || !raceConfig || isDialogOpen()) return;
+  const r = race;
+  const cfg = raceConfig;
+  const dup = findDuplicate(listMaps(), r.seed, cfg);
+  if (dup) {
+    showToast(`Este mapa ya está guardado como «${dup.name}»`);
+    return;
+  }
+  openTextPrompt({
+    title: 'Guardar mapa',
+    message: 'Ponle un nombre para encontrarlo luego en «Mis mapas».',
+    value: loadedName ?? `Mapa ${r.seed}`,
+    confirmLabel: 'Guardar',
+    onSubmit: (name) => {
+      const res = saveMap({ name, seed: r.seed, config: cfg, map: r.map, firstFinishTime: r.firstFinishTime });
+      if (res.ok) {
+        mapsPanel.render();
+        showToast('Mapa guardado');
+      } else if (res.error === 'duplicate') showToast(`Este mapa ya está guardado como «${res.existing?.name ?? name}»`);
+      else if (res.error === 'full') openInfo('Límite de mapas', `Ya tienes ${MAX_SAVED_MAPS} mapas guardados. Borra alguno en «Mis mapas» para guardar otro. No se perdió ninguno.`);
+      else if (res.error === 'quota') openInfo('No hay espacio', 'El navegador no tiene espacio suficiente para guardar este mapa. Borra algún mapa guardado e inténtalo de nuevo. Tus mapas guardados siguen intactos.');
+      else openInfo('No se pudo guardar', 'El almacenamiento del navegador no está disponible (¿modo privado?).');
+    },
+  });
+}
+$('btn-save-map').addEventListener('click', saveCurrentMap);
+$('btn-stg-save').addEventListener('click', saveCurrentMap);
 
 /* ------------------------------------------------------------- race */
 
@@ -352,6 +459,7 @@ function showResult(): void {
         disposeRace();
         void generate(true);
       },
+      onSave: saveCurrentMap,
       onConfig: () => {
         hidePodium();
         openPanel();

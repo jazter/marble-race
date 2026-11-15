@@ -129,3 +129,69 @@ export function openConfirm(opts: { title: string; message: string; confirmLabel
   ]);
   open(card, cancel, () => {});
 }
+
+/** Single-line text prompt (save / rename a map). Enter confirms, Esc cancels. */
+export function openTextPrompt(opts: {
+  title: string;
+  message?: string;
+  value: string;
+  confirmLabel: string;
+  maxLength?: number;
+  onSubmit: (value: string) => void;
+}): void {
+  const input = el('input', {
+    type: 'text',
+    class: 'name-input',
+    maxlength: String(opts.maxLength ?? 40),
+    autocomplete: 'off',
+    spellcheck: 'false',
+    enterkeyhint: 'done',
+    'aria-label': opts.title,
+  }) as HTMLInputElement;
+  input.value = opts.value;
+  const submit = (): void => {
+    const v = input.value.trim();
+    if (!v) {
+      input.focus();
+      return;
+    }
+    closeDialog();
+    opts.onSubmit(v);
+  };
+  const ok = el('button', { type: 'button', class: 'btn primary' }, opts.confirmLabel);
+  ok.addEventListener('click', submit);
+  const cancel = el('button', { type: 'button', class: 'btn' }, 'Cancelar');
+  cancel.addEventListener('click', closeDialog);
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      submit();
+    }
+  });
+  const kids: HTMLElement[] = [el('h2', {}, opts.title)];
+  if (opts.message) kids.push(el('p', { class: 'muted' }, opts.message));
+  kids.push(input, el('div', { class: 'btn-row' }, [ok, cancel]));
+  open(el('div', { class: 'dialog-card', role: 'dialog', 'aria-modal': 'true', 'aria-label': opts.title }, kids), input, () => {});
+}
+
+/** Information dialog with a single "Entendido" button. */
+export function openInfo(title: string, message: string): void {
+  const ok = el('button', { type: 'button', class: 'btn primary' }, 'Entendido');
+  ok.addEventListener('click', closeDialog);
+  const card = el('div', { class: 'dialog-card', role: 'alertdialog', 'aria-modal': 'true', 'aria-label': title }, [
+    el('h2', {}, title),
+    el('p', { class: 'muted' }, message),
+    el('div', { class: 'btn-row' }, [ok]),
+  ]);
+  open(card, ok, () => {});
+}
+
+let toastTimer: number | undefined;
+/** Short non-blocking message at the bottom of the screen. */
+export function showToast(text: string): void {
+  const t = $('app-toast');
+  t.textContent = text;
+  t.classList.add('show');
+  window.clearTimeout(toastTimer);
+  toastTimer = window.setTimeout(() => t.classList.remove('show'), 2600);
+}

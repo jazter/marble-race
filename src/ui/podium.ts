@@ -18,7 +18,7 @@ export function showPodium(
   result: RaceResult,
   roster: MarbleProfile[],
   podiumSize: number,
-  handlers: { onRepeat: () => void; onNew: () => void; onConfig: () => void },
+  handlers: { onRepeat: () => void; onNew: () => void; onConfig: () => void; onSave?: () => void },
 ): void {
   const root = $('podium');
   const top = result.finishers.slice(0, podiumSize);
@@ -69,6 +69,7 @@ export function showPodium(
   };
   mk('↺ Repetir carrera', 'primary', handlers.onRepeat);
   mk('🗺️ Nuevo mapa', '', handlers.onNew);
+  if (handlers.onSave) mk('⭐ Guardar mapa', '', handlers.onSave);
   mk('⚙ Configurar', '', handlers.onConfig);
   inner.append(btns);
   root.innerHTML = '';

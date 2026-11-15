@@ -40,6 +40,7 @@
             <h2>Carreras de canicas</h2>
             <p class="muted">Ajusta las opciones y genera un mapa aleatorio validado: el juego comprueba que al menos una canica llegue a la meta antes de mostrártelo.</p>
             <button id="btn-generate-2" class="btn primary big" type="button">🎲 Generar mapa</button>
+            <button id="btn-welcome-maps" class="btn" type="button" hidden>📂 Mis mapas</button>
           </div>
         </section>
 
@@ -52,6 +53,14 @@
             <div class="bar"><div id="progress-bar"></div></div>
             <ul id="progress-log" class="log"></ul>
             <button id="btn-cancel" class="btn" type="button">Cancelar</button>
+          </div>
+        </section>
+
+        <!-- Re-checking a saved map -->
+        <section id="checking" class="overlay center">
+          <div class="card">
+            <div class="spinner"></div>
+            <h2>Comprobando mapa guardado…</h2>
           </div>
         </section>
 
@@ -74,6 +83,7 @@
           <div class="btn-row">
             <button id="btn-start" class="btn primary big" type="button">▶ Iniciar carrera</button>
             <button id="btn-other" class="btn" type="button">🎲 Otro mapa</button>
+            <button id="btn-save-map" class="btn" type="button">⭐ Guardar mapa</button>
             <button id="btn-fit" class="btn" type="button">Ajustar vista</button>
             <button id="btn-music-2" class="btn icon btn-music" type="button" aria-label="Música"></button>
           </div>
@@ -94,6 +104,7 @@
           </div>
           <div class="stg-bar">
             <button id="btn-count" class="btn primary big pulse" type="button">▶ Iniciar conteo</button>
+            <button id="btn-stg-save" class="btn" type="button">⭐<span class="lbl"> Guardar mapa</span></button>
             <button id="btn-stg-new" class="btn" type="button">🗺️<span class="lbl"> Nuevo mapa</span></button>
             <button id="btn-music-3" class="btn icon btn-music" type="button" aria-label="Música"></button>
           </div>
@@ -129,6 +140,7 @@
       </main>
     </div>
     <div id="dialog" class="modal"></div>
+    <div id="app-toast" class="app-toast" role="status" aria-live="polite"></div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
