@@ -584,3 +584,21 @@ describe('mixed boundary', () => {
     for (const w of pieces(m)) expect(w.reaction).toBe('solid');
   });
 });
+
+describe('course outline', () => {
+  it('is a closed polygon that contains the spawn points, the path and the finish line', async () => {
+    const { pointInPolygon } = await import('../src/core/math');
+    for (const ga of [0, 35, -90]) {
+      for (const seed of [1, 2, 3]) {
+        const m = generateMap(cfgWith((c) => (c.physics.gravityAngle = ga)), seed);
+        expect(m.outline).toBeDefined();
+        const o = m.outline as Vec[];
+        expect(o.length).toBeGreaterThan(3);
+        for (const p of m.start.spawnPoints) expect(pointInPolygon(p, o)).toBe(true);
+        for (const p of m.path.slice(1, -1)) expect(pointInPolygon(p, o)).toBe(true);
+        const mid = { x: (m.finish.a.x + m.finish.b.x) / 2, y: (m.finish.a.y + m.finish.b.y) / 2 };
+        expect(pointInPolygon(mid, o)).toBe(true);
+      }
+    }
+  });
+});

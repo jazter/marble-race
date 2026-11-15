@@ -1,6 +1,7 @@
 /** Saved maps ("Mis mapas"): pure storage logic over an injectable Storage-like object. */
 import type { GameConfig } from '../core/config';
-import type { MapDef } from '../core/types';
+import type { MapDef, Vec } from '../core/types';
+import { pointInPolygon } from '../core/math';
 
 export const MAPS_KEY = 'marble-race.maps.v1';
 export const MAX_SAVED_MAPS = 30;
@@ -181,4 +182,27 @@ export function importMaps(text: string, store: KV | null = defaultStore()): Imp
   if (added === 0) return { added, skipped };
   if (!write(list, store)) return { added: 0, skipped: incoming.length, error: 'quota' };
   return { added, skipped };
+}
+
+/**
+ * Maps saved before `MapDef.outline` existed: rebuild the course outline from the
+ * outer-wall pieces (ids b1..bN are emitted in order along the boundary loop). Returns
+ * the map unchanged when it already has one or the rebuilt polygon doesn't look right.
+ */
+export function withOutline(map: MapDef): MapDef {
+  if (map.outline && map.outline.length >= 3) return map;
+  const pieces = map.walls
+    .filter((w) => /^b\d+$/.test(w.id) && w.shape.type === 'polyline')
+    .sort((a, b) => Number(a.id.slice(1)) - Number(b.id.slice(1)));
+  const pts: Vec[] = [];
+  for (const w of pieces) {
+    if (w.shape.type !== 'polyline') continue;
+    for (const p of w.shape.points) {
+      const last = pts[pts.length - 1];
+      if (!last || Math.hypot(last.x - p.x, last.y - p.y) > 1e-6) pts.push({ x: p.x, y: p.y });
+    }
+  }
+  if (pts.length < 4) return map;
+  const inside = map.start.spawnPoints.every((p) => pointInPolygon(p, pts)) && map.path.slice(1, -1).every((p) => pointInPolygon(p, pts));
+  return inside ? { ...map, outline: pts } : map;
 }

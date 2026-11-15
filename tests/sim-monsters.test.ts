@@ -368,7 +368,7 @@ describe('monsters', () => {
 });
 
 describe('release immunity', () => {
-  it('a released marble is not grabbed again by any monster for 1 s', async () => {
+  it('a released marble is not grabbed again by any monster for 2 s', async () => {
     const { defaultConfig } = await import('../src/core/config');
     const { generateMap } = await import('../src/gen');
     const { createRoster } = await import('../src/core/roster');
@@ -389,7 +389,7 @@ describe('release immunity', () => {
             releases++;
           } else if (e.action === 'grab') {
             const r = lastRelease.get(e.marbleId);
-            if (r !== undefined) expect(e.t - r).toBeGreaterThanOrEqual(1 - 1e-6);
+            if (r !== undefined) expect(e.t - r).toBeGreaterThanOrEqual(2 - 1e-6);
           }
         }
       }

@@ -395,3 +395,27 @@ describe('rematch (race.raceSeed)', () => {
     expect(run(1)).not.toBe(run(0));
   });
 });
+
+describe('course outline containment', () => {
+  it('eliminates a racing marble that ends up outside the outline', () => {
+    const map = sampleMap(6);
+    // pretend the course ends at y = 9: anything that falls below is "outside the walls"
+    map.outline = [
+      { x: -8, y: -30 },
+      { x: 8, y: -30 },
+      { x: 8, y: 9 },
+      { x: -8, y: 9 },
+    ];
+    const sim = createSimulation(map, sampleRoster(6), sampleConfig(6));
+    while (!sim.isOver() && sim.time < 20) sim.step();
+    const out = sim.getMarbles().filter((m) => m.eliminatedReason === 'outOfBounds');
+    expect(out.length).toBeGreaterThan(0);
+    sim.destroy();
+  });
+  it('maps without an outline only use the bounds box', () => {
+    const sim = createSimulation(sampleMap(6), sampleRoster(6), sampleConfig(6));
+    while (!sim.isOver() && sim.time < 20) sim.step();
+    expect(sim.getMarbles().filter((m) => m.eliminatedReason === 'outOfBounds').length).toBe(0);
+    sim.destroy();
+  });
+});

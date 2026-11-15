@@ -125,3 +125,19 @@ describe('savedMaps', () => {
     expect(r.ok).toBe(false);
   });
 });
+
+describe('withOutline (maps saved before outlines existed)', () => {
+  it('rebuilds the outline from the outer-wall pieces', async () => {
+    const { withOutline } = await import('../src/ui/savedMaps');
+    const { defaultConfig } = await import('../src/core/config');
+    const { generateMap } = await import('../src/gen');
+    const { pointInPolygon } = await import('../src/core/math');
+    const fresh = generateMap(defaultConfig(), 5);
+    const old = { ...fresh };
+    delete (old as { outline?: unknown }).outline;
+    const fixed = withOutline(old);
+    expect(fixed.outline).toBeDefined();
+    for (const p of fresh.start.spawnPoints) expect(pointInPolygon(p, fixed.outline!)).toBe(true);
+    expect(withOutline(fresh)).toBe(fresh); // already has one
+  });
+});

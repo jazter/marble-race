@@ -507,6 +507,7 @@ export function generateMap(config: GameConfig, seed: number): MapDef {
     zones,
     switches,
     ...(monsters.length ? { monsters } : {}),
+    outline: chain.map(rp),
     start: { spawnPoints, area: start.area.map(rp) },
     finish: { a: rp(finish.a), b: rp(finish.b), sensor: finish.sensor.map(rp) },
     segments,

@@ -219,6 +219,12 @@ export interface MapDef {
   switches: Switch[];
   /** Optional (older maps have none). */
   monsters?: Monster[];
+  /**
+   * Closed polygon along the centre of the outer walls (the course interior). A racing
+   * marble whose centre ends up outside it has escaped through a wall and is eliminated.
+   * Optional: older maps fall back to `bounds`.
+   */
+  outline?: Vec[];
   start: {
     /** One spawn point per marble (length === config.marbles.count). */
     spawnPoints: Vec[];

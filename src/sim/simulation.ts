@@ -736,9 +736,12 @@ class SimImpl implements Simulation {
   private processProgressAndBounds(): void {
     const bd = this.map.bounds;
     const seg = [0];
+    const outline = this.map.outline && this.map.outline.length >= 3 ? this.map.outline : null;
+    const checkOutline = outline !== null && this.stepCount % 4 === 0;
     for (const m of this.marbles) {
       if (m.status !== 'racing' || m.heldBy !== undefined) continue;
-      if (m.x < bd.minX || m.x > bd.maxX || m.y < bd.minY || m.y > bd.maxY) {
+      if (m.x < bd.minX || m.x > bd.maxX || m.y < bd.minY || m.y > bd.maxY || (checkOutline && !pointInPolygon(m, outline))) {
+        // escaped through a wall (or left the map): never let it keep racing outside the course
         this.eliminate(m, 'outOfBounds');
         continue;
       }

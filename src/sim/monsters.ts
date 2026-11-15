@@ -25,7 +25,7 @@ export interface MonsterHost {
 
 const EPS = 1e-9;
 /** Seconds a released marble can't be caught again by ANY monster (avoids grab loops). */
-const RELEASE_IMMUNITY = 1;
+const RELEASE_IMMUNITY = 2;
 interface Shared {
   now: number;
   immuneUntil: Map<number, number>;

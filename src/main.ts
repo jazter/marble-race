@@ -14,7 +14,7 @@ import { ConfigPanel } from './ui/configPanel';
 import { $, el } from './ui/dom';
 import { isDialogOpen, openConfirm, openInfo, openNaming, openTextPrompt, showToast } from './ui/dialogs';
 import { MapsPanel } from './ui/mapsPanel';
-import { MAX_SAVED_MAPS, findDuplicate, listMaps, saveMap, type SavedMap } from './ui/savedMaps';
+import { MAX_SAVED_MAPS, findDuplicate, listMaps, saveMap, withOutline, type SavedMap } from './ui/savedMaps';
 import { Hud } from './ui/hud';
 import { customOf, labelNode, marbleCanvas } from './ui/marbleLabel';
 import { clearCustomNames, getAllCustomNames, onNamesChanged } from './ui/names';
@@ -253,23 +253,24 @@ async function loadSavedMap(m: SavedMap): Promise<void> {
     const cfg = structuredClone(m.config);
     fill(cfg as unknown as Record<string, unknown>, defaultConfig() as unknown as Record<string, unknown>); // fields added since it was saved
     cfg.display = structuredClone(config.display); // scenery follows the current setting
+    const map = withOutline(m.map); // older saved maps: rebuild the course outline for containment
     const roster = createRoster(cfg, m.seed, Object.keys(getAllCustomNames()));
     let finishers = requiredFinishers(cfg);
     let firstFinishTime = m.firstFinishTime;
     try {
-      const v = runValidation(m.map, roster, cfg);
+      const v = runValidation(map, roster, cfg);
       finishers = v.finishers;
       if (v.ok) firstFinishTime = v.firstFinishTime;
       loadWarn = !v.ok;
     } catch {
       loadWarn = true;
     }
-    race = { map: m.map, roster, seed: m.seed, attempts: 1, firstFinishTime, validationFinishers: finishers, rejected: [] };
+    race = { map, roster, seed: m.seed, attempts: 1, firstFinishTime, validationFinishers: finishers, rejected: [] };
     raceConfig = cfg;
     loadedName = m.name;
     configDirty = false;
     renderer.setConfig(cfg);
-    renderer.setMap(m.map);
+    renderer.setMap(map);
     setMode('preview');
     updatePreviewInfo();
   } finally {
