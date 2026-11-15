@@ -208,8 +208,25 @@ export function buildOctopusArena(ctx: Ctx, rng: Rng, id: string, centring = fal
   const roofY = yTop + 3.2;
   const centerY = roofY + 1.0 + bodyRadius;
   const span = bodyRadius + 0.9;
-  // little "hat" so marbles never rest on top of the head
-  addWall(ctx, { type: 'polyline', thickness: 0.3, points: [{ x: cx - span, y: roofY + 1.3 }, { x: cx, y: roofY }, { x: cx + span, y: roofY + 1.3 }] }, 'ramp', { reaction: 'solid' });
+  // Solid "hat" hugging the head so marbles never rest on top of it. It used to be a thin
+  // roof with a gap above the head, and a marble could get wedged in that gap, be released
+  // and re-grabbed forever. A convex block from the apex down into the body leaves no pocket.
+  void span;
+  addWall(
+    ctx,
+    {
+      type: 'polygon',
+      points: [
+        { x: cx, y: roofY },
+        { x: cx + bodyRadius * 1.05, y: centerY - bodyRadius * 0.25 },
+        { x: cx + bodyRadius * 0.5, y: centerY },
+        { x: cx - bodyRadius * 0.5, y: centerY },
+        { x: cx - bodyRadius * 1.05, y: centerY - bodyRadius * 0.25 },
+      ],
+    },
+    'ramp',
+    { reaction: 'solid' },
+  );
   const yEnd = centerY + bodyRadius + 5.5;
   extend(ctx, yEnd);
   pathTo(ctx, cx, yEnd);

@@ -398,3 +398,29 @@ describe('release immunity', () => {
     expect(releases).toBeGreaterThan(5);
   });
 });
+
+describe('no grab loops', () => {
+  it('a monster never catches the same marble more than twice', async () => {
+    const { defaultConfig } = await import('../src/core/config');
+    const { generateMap } = await import('../src/gen');
+    const { createRoster } = await import('../src/core/roster');
+    for (const seed of [1, 2, 3]) {
+      const cfg = defaultConfig();
+      cfg.monsters.destroyChance = 0; // releases only, the worst case for loops
+      cfg.monsters.count = 8;
+      const map = generateMap(cfg, seed);
+      const sim = createSimulation(map, createRoster(cfg, seed), cfg);
+      const grabs = new Map<string, number>();
+      while (!sim.isOver() && sim.time < 150) {
+        sim.step();
+        for (const e of sim.drainEvents()) {
+          if (e.type !== 'monster' || e.action !== 'grab') continue;
+          const k = `${e.monsterId}|${e.marbleId}`;
+          grabs.set(k, (grabs.get(k) ?? 0) + 1);
+          expect(grabs.get(k)).toBeLessThanOrEqual(2);
+        }
+      }
+      sim.destroy();
+    }
+  });
+});

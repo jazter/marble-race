@@ -58,3 +58,30 @@ describe('octopus placement', () => {
     expect(JSON.stringify(a)).toBe(JSON.stringify(b));
   });
 });
+
+describe('octopus hat', () => {
+  it('is a solid block resting on the head (no gap where a marble could get wedged)', async () => {
+    const { defaultConfig } = await import('../src/core/config');
+    const { generateMap } = await import('../src/gen');
+    let checked = 0;
+    for (let seed = 1; seed <= 20; seed++) {
+      const cfg = defaultConfig();
+      cfg.monsters.kinds = { spider: false, octopus: true, fish: false, snake: false };
+      const m = generateMap(cfg, seed);
+      for (const o of m.monsters ?? []) {
+        if (o.kind !== 'octopus') continue;
+        // the hat: a polygon wall whose points include one right above the body centre
+        const hat = m.walls.find(
+          (w) => w.shape.type === 'polygon' && w.shape.points.some((p) => Math.hypot(p.x - o.center.x, p.y - o.center.y) < o.bodyRadius * 0.6),
+        );
+        expect(hat).toBeDefined();
+        if (!hat || hat.shape.type !== 'polygon') continue;
+        // some of its vertices lie inside the body circle => the block overlaps the head
+        const inside = hat.shape.points.filter((p) => Math.hypot(p.x - o.center.x, p.y - o.center.y) < o.bodyRadius);
+        expect(inside.length).toBeGreaterThanOrEqual(2);
+        checked++;
+      }
+    }
+    expect(checked).toBeGreaterThan(5);
+  });
+});

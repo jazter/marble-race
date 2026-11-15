@@ -26,9 +26,13 @@ export interface MonsterHost {
 const EPS = 1e-9;
 /** Seconds a released marble can't be caught again by ANY monster (avoids grab loops). */
 const RELEASE_IMMUNITY = 2;
+/** A monster can catch the same marble at most this many times per race (breaks loops). */
+const MAX_GRABS_SAME_MARBLE = 2;
 interface Shared {
   now: number;
   immuneUntil: Map<number, number>;
+  /** `${monsterId}|${marbleId}` -> times caught. */
+  grabs: Map<string, number>;
 }
 const SHARED = new WeakMap<MonsterHost, Shared>();
 /** Spider silk drop speed (m/s, x monsters.speed): fast enough to reach rolling marbles. */
@@ -61,8 +65,10 @@ abstract class Base<M extends Monster> {
   protected catchable(m: MarbleState): boolean {
     if (m.status !== 'racing' || m.heldBy !== undefined) return false;
     const sh = SHARED.get(this.h);
-    const until = sh?.immuneUntil.get(m.id);
-    return until === undefined || (sh as Shared).now >= until - EPS;
+    if (!sh) return true;
+    if ((sh.grabs.get(`${this.def.id}|${m.id}`) ?? 0) >= MAX_GRABS_SAME_MARBLE) return false;
+    const until = sh.immuneUntil.get(m.id);
+    return until === undefined || sh.now >= until - EPS;
   }
 
   protected place(m: MarbleState, x: number, y: number): void {
@@ -73,6 +79,11 @@ abstract class Base<M extends Monster> {
   }
 
   protected grab(t: number, m: MarbleState, x: number, y: number): void {
+    const sh = SHARED.get(this.h);
+    if (sh) {
+      const k = `${this.def.id}|${m.id}`;
+      sh.grabs.set(k, (sh.grabs.get(k) ?? 0) + 1);
+    }
     this.h.hold(m, this.def.id);
     m.heldBy = this.def.id;
     this.place(m, x, y);
@@ -577,7 +588,7 @@ class Crosser extends Base<Traveller> {
 export class MonsterSystem {
   private list: (Spider | Octopus | Crosser)[] = [];
 
-  private readonly shared: Shared = { now: 0, immuneUntil: new Map() };
+  private readonly shared: Shared = { now: 0, immuneUntil: new Map(), grabs: new Map() };
 
   constructor(defs: readonly Monster[], host: MonsterHost) {
     SHARED.set(host, this.shared);
