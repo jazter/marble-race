@@ -789,70 +789,79 @@ function drawTentacle(
   let wrapDir = 1;
   const wr = marble ? marble.radius * 1.0 : 0;
   if (wrap && marble) {
-    const dx = p0x - marble.x;
-    const dy = p0y - marble.y;
-    const d = Math.hypot(dx, dy) || 1;
-    wrapAng = Math.atan2(dy, dx);
-    ex = marble.x + (dx / d) * wr * 1.12;
-    ey = marble.y + (dy / d) * wr * 1.12;
-    // wrap around the side facing away from the body's axis for a pleasing spiral
-    wrapDir = (i % 2 === 0 ? 1 : -1) * (Math.sin(ang - Math.atan2(marble.y - cy, marble.x - cx)) >= 0 ? 1 : -1);
+    // Arrive at the side of the marble where the circle's tangent matches the arm's
+    // approach direction, then keep turning the same way: no hook before the wrap.
+    const dAng = Math.atan2(marble.y - p0y, marble.x - p0x);
+    const sgn = i % 2 === 0 ? 1 : -1;
+    wrapAng = dAng + sgn * Math.PI * 0.5;
+    wrapDir = -sgn;
+    ex = marble.x + Math.cos(wrapAng) * wr * 1.12;
+    ey = marble.y + Math.sin(wrapAng) * wr * 1.12;
   }
 
-  const L = Math.hypot(ex - p0x, ey - p0y);
-  const idleAmp = state === 'idle' ? 0.2 : state === 'retract' ? 0.14 : state === 'reach' ? 0.05 : 0.07;
-  const amp = R * idleAmp + 0.05;
-  const c1x = p0x + outx * (R * 0.45 + L * 0.28);
-  const c1y = p0y + outy * (R * 0.45 + L * 0.28);
-  const c2x = ex + (c1x - ex) * (state === 'reach' ? 0.15 : 0.4);
-  const c2y = ey + (c1y - ey) * (state === 'reach' ? 0.15 : 0.4);
-  // lateral direction (screen-space normal of the chord)
-  let cdx = ex - p0x;
-  let cdy = ey - p0y;
-  const cl = Math.hypot(cdx, cdy) || 1;
-  cdx /= cl;
-  cdy /= cl;
-  const lnx = -cdy;
-  const lny = cdx;
+  // Centre-line: a smooth Hermite curve from the root (leaving the body outward) to the
+  // end point, so the arm flows without kinks; a slow travelling sway whose amplitude grows
+  // toward the tip makes it look like it floats. Tips only bend slightly (no spirals).
+  const L = Math.hypot(ex - p0x, ey - p0y) || 0.01;
+  const chordAng = Math.atan2(ey - p0y, ex - p0x);
+  const startAng = ang + angDiff(ang, chordAng) * 0.55;
+  const swayAmt = state === 'reach' ? 0.24 : state === 'hold' ? 0.1 : 0.38;
+  let endAng = chordAng + Math.sin(t * 0.85 + i * 1.7 + h * 5) * swayAmt;
+  if (wrap) endAng = wrapAng + wrapDir * Math.PI * 0.5; // meet the marble tangentially
+  const tg = L * 0.95;
+  const m0x = Math.cos(startAng) * tg;
+  const m0y = Math.sin(startAng) * tg;
+  const m1x = Math.cos(endAng) * tg;
+  const m1y = Math.sin(endAng) * tg;
+  const lnx = -Math.sin(chordAng);
+  const lny = Math.cos(chordAng);
+  const waveAmp = R * (state === 'idle' ? 0.13 : state === 'retract' ? 0.11 : state === 'reach' ? 0.08 : 0.05);
+  const wave = t * 1.5 + i * 0.95 + h * 6;
 
-  const STEPS = 18;
+  const STEPS = 24;
   const pts: TPoint[] = [];
-  const wave = t * 2.7 + i * 0.95 + h * 6;
   for (let k = 0; k <= STEPS; k++) {
     const u = k / STEPS;
-    const m = 1 - u;
-    const bx = m * m * m * p0x + 3 * m * m * u * c1x + 3 * m * u * u * c2x + u * u * u * ex;
-    const by = m * m * m * p0y + 3 * m * m * u * c1y + 3 * m * u * u * c2y + u * u * u * ey;
-    const lat = Math.sin(u * 5.2 - wave) * amp * Math.sin(Math.PI * Math.min(1, u * 1.15)) * (0.45 + u * 0.8);
+    const u2 = u * u;
+    const u3 = u2 * u;
+    const h00 = 2 * u3 - 3 * u2 + 1;
+    const h10 = u3 - 2 * u2 + u;
+    const h01 = -2 * u3 + 3 * u2;
+    const h11 = u3 - u2;
+    const bx = h00 * p0x + h10 * m0x + h01 * ex + h11 * m1x;
+    const by = h00 * p0y + h10 * m0y + h01 * ey + h11 * m1y;
+    // zero at the root and at the very end (so wraps stay attached), strongest near 3/4
+    const env = Math.sin(Math.PI * u) * (0.35 + 0.65 * u);
+    const lat = Math.sin(u * 5.0 - wave) * waveAmp * env;
     pts.push({ x: bx + lnx * lat, y: by + lny * lat, w: 0 });
   }
 
-  // tail curl
   const last = pts[pts.length - 1];
   const prev = pts[pts.length - 2];
   if (wrap && marble) {
-    const sweep = (1.45 + 0.1 * Math.sin(t * 3 + i)) * Math.PI;
+    // one gentle turn around the marble, continuing the arm's direction
+    const sweep = (1.05 + 0.08 * Math.sin(t * 2.2 + i)) * Math.PI;
     const rr0 = wr * 1.12;
-    for (let k = 1; k <= 14; k++) {
-      const u = k / 14;
+    for (let k = 1; k <= 12; k++) {
+      const u = k / 12;
       const a = wrapAng + wrapDir * sweep * u;
-      const rr = rr0 + (wr * 0.62 - rr0) * 0 + wr * 0.08 * u;
+      const rr = rr0 - wr * 0.06 * u;
       pts.push({ x: marble.x + Math.cos(a) * rr, y: marble.y + Math.sin(a) * rr, w: 0 });
     }
   } else if (state === 'idle' || state === 'retract') {
+    // relaxed tip: a slight bend (~40-60 degrees) that breathes a little
     let th = Math.atan2(last.y - prev.y, last.x - prev.x);
     const dir = i % 2 === 0 ? 1 : -1;
+    const bend = (state === 'idle' ? 0.85 : 0.5) + 0.2 * Math.sin(t * 1.1 + i * 2.3);
     let px = last.x;
     let py = last.y;
-    const total = state === 'idle' ? 1.35 : 0.8;
-    const steps = 10;
+    const steps = 6;
+    const seg = Math.min(R * 0.11, (L / STEPS) * 1.1);
     for (let k = 1; k <= steps; k++) {
-      const u = k / steps;
-      const rho = R * (0.42 - 0.27 * u);
-      const ds = (total * Math.PI * rho * 2) / steps / Math.max(0.5, total);
-      th += (ds / rho) * dir * (state === 'idle' ? 1 : 0.7);
-      px += Math.cos(th) * ds * 0.9;
-      py += Math.sin(th) * ds * 0.9;
+      th += (bend / steps) * dir;
+      const ds = seg * (1 - 0.08 * k);
+      px += Math.cos(th) * ds;
+      py += Math.sin(th) * ds;
       pts.push({ x: px, y: py, w: 0 });
     }
   }
@@ -862,7 +871,7 @@ function drawTentacle(
   const w0 = Math.min(0.5 * R, 0.62);
   for (let k = 0; k < total; k++) {
     const u = k / (total - 1);
-    pts[k].w = Math.max(0.05, w0 * Math.pow(1 - u, 0.85) * (1 + 0.15 * Math.sin(u * 9 - t * 3)) + 0.06);
+    pts[k].w = Math.max(0.05, w0 * Math.pow(1 - u, 0.85) + 0.05);
   }
   void sumReach;
 
