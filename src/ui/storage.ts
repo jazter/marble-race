@@ -20,7 +20,18 @@ export function loadConfig(): GameConfig {
   const cfg = defaultConfig();
   try {
     const raw = localStorage.getItem(KEY);
-    if (raw) mergeInto(cfg as unknown as Record<string, unknown>, JSON.parse(raw));
+    if (raw) {
+      const saved = JSON.parse(raw);
+      mergeInto(cfg as unknown as Record<string, unknown>, saved);
+      // Configs saved before monster groups existed stored a plain monster count (old
+      // default 3). The field now means groups per map, so adopt the new monster defaults.
+      const m = saved && typeof saved === 'object' ? (saved as { monsters?: Record<string, unknown> }).monsters : undefined;
+      if (m && typeof m === 'object' && !('groupSize' in m)) {
+        const d = defaultConfig().monsters;
+        cfg.monsters.count = Math.max(cfg.monsters.count, d.count);
+        cfg.monsters.groupSize = d.groupSize;
+      }
+    }
   } catch {
     /* storage unavailable or corrupt: use defaults */
   }
