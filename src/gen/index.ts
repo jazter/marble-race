@@ -271,10 +271,16 @@ function emitMixed(ctx: Ctx, chain: Vec[], protect: Range[], rng: Rng): void {
     }
   }
   const tilt = 25 * DEG;
-  const last: Record<string, { r: WallReaction; sinceSlow: number }> = {
-    left: { r: 'solid', sinceSlow: 9 },
-    right: { r: 'solid', sinceSlow: 9 },
+  const last: Record<string, { r: WallReaction; sinceSlow: number; sinceKill: number }> = {
+    left: { r: 'solid', sinceSlow: 9, sinceKill: 9 },
+    right: { r: 'solid', sinceSlow: 9, sinceKill: 9 },
   };
+  // Rare lethal pieces: ~4% of pieces (taken from the solid share, so the other reactions of
+  // a seed don't change), at most 1 per 4 segments, never next to another lethal piece, never
+  // on diagonal pieces (chicanes) and never where ramps meet the walls (marbles hug the walls there).
+  const allAttach = [...attachYs.left, ...attachYs.right];
+  const maxKill = sp.kill ? Math.max(1, Math.floor(ctx.cfg.map.segments / 4)) : 0;
+  let kills = 0;
   let i = 0;
   while (i < subs.length) {
     const first = subs[i];
@@ -290,17 +296,26 @@ function emitMixed(ctx: Ctx, chain: Vec[], protect: Range[], rng: Rng): void {
     let reaction: WallReaction = 'solid';
     let launchDir: Vec | undefined;
     if (first.prot) {
-      if (first.side !== 'cap') last[first.side] = { r: 'solid', sinceSlow: 9 };
+      if (first.side !== 'cap') last[first.side] = { r: 'solid', sinceSlow: 9, sinceKill: 9 };
     } else {
       const st = last[first.side];
       let want: WallReaction = roll < 0.45 ? 'solid' : roll < 0.75 ? 'bounce' : roll < 0.9 ? 'slow' : 'launch';
-      if (want !== 'solid' && !ok[want]) want = 'solid';
+      if (want !== 'solid' && !ok[want as 'bounce' | 'slow' | 'launch']) want = 'solid';
       const y0 = Math.min(...pts.map((p) => p.y)) - 1.5;
       const y1 = Math.max(...pts.map((p) => p.y)) + 1.5;
+      if (roll < 0.04 && kills < maxKill && st.sinceKill >= 4) {
+        const pa = pts[0];
+        const pb = pts[pts.length - 1];
+        const vertical = Math.abs(pb.x - pa.x) <= Math.abs(pb.y - pa.y) * Math.tan(12 * DEG);
+        const nearRamp = allAttach.some((y) => y > y0 - 1.5 && y < y1 + 1.5);
+        if (vertical && !nearRamp) want = 'kill';
+      }
       if (want === 'slow' && (st.sinceSlow < 3 || st.r === 'launch' || attachYs[first.side as 'left' | 'right'].some((y) => y > y0 && y < y1))) want = 'solid';
       if (want === 'launch' && (st.r === 'launch' || st.r === 'slow')) want = 'solid';
       reaction = want;
       st.sinceSlow = want === 'slow' ? 0 : st.sinceSlow + 1;
+      st.sinceKill = want === 'kill' ? 0 : st.sinceKill + 1;
+      if (want === 'kill') kills++;
       st.r = want;
       if (want === 'launch') {
         const inward = first.side === 'left' ? 1 : -1;

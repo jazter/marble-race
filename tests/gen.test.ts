@@ -495,13 +495,27 @@ describe('mixed boundary', () => {
   const mixedCfg = (extra?: (c: GameConfig) => void): GameConfig => cfgWith((c) => ((c.walls.boundary = 'mixed'), (c.map.segments = 10), extra?.(c)));
   const pieces = (m: MapDef) => m.walls.filter((w) => /^b\d+$/.test(w.id));
 
-  it('gives several different reactions, never kill, launch pushes along the flow', () => {
+  it('gives several different reactions, launch pushes along the flow, kill is rare', () => {
     const seen = new Set<string>();
+    let kills = 0;
+    let total = 0;
     for (let seed = 1; seed <= 10; seed++) {
       const m = generateMap(mixedCfg(), seed);
-      for (const w of pieces(m)) {
+      const ps0 = pieces(m);
+      // lethal pieces: capped (1 per 4 segments), never adjacent, never diagonal
+      const k = ps0.filter((w) => w.reaction === 'kill');
+      expect(k.length).toBeLessThanOrEqual(Math.floor(10 / 4));
+      for (let i = 1; i < ps0.length; i++) expect(ps0[i].reaction === 'kill' && ps0[i - 1].reaction === 'kill').toBe(false);
+      for (const w of k) {
+        if (w.shape.type !== 'polyline') continue;
+        const a = w.shape.points[0];
+        const b = w.shape.points[w.shape.points.length - 1];
+        expect(Math.abs(b.x - a.x)).toBeLessThanOrEqual(Math.abs(b.y - a.y) * Math.tan((12 * Math.PI) / 180) + 1e-6);
+      }
+      kills += k.length;
+      total += ps0.length;
+      for (const w of ps0) {
         expect(w.boundary).toBe(true);
-        expect(w.reaction).not.toBe('kill');
         seen.add(w.reaction);
         if (w.reaction === 'launch') {
           expect(w.launchDir).toBeDefined();
@@ -514,6 +528,16 @@ describe('mixed boundary', () => {
       expect(ps.filter((w) => w.reaction !== 'solid').length).toBeGreaterThan(3);
     }
     expect(seen.has('solid') && seen.has('bounce') && seen.has('slow') && seen.has('launch')).toBe(true);
+    // kill shows up, but rarely
+    expect(kills).toBeGreaterThan(0);
+    expect(kills / total).toBeLessThan(0.05);
+  });
+
+  it('never makes lethal pieces when kill walls are disabled', () => {
+    for (let seed = 1; seed <= 6; seed++) {
+      const m = generateMap(mixedCfg((x) => (x.walls.special.kill = false)), seed);
+      for (const w of pieces(m)) expect(w.reaction).not.toBe('kill');
+    }
   });
 
   it('keeps start box, finish and regroup / galton / lanes walls solid', () => {
@@ -551,7 +575,7 @@ describe('mixed boundary', () => {
   it('respects disabled special reactions and is deterministic', () => {
     const c = mixedCfg((x) => (x.walls.special = { bounce: true, slow: false, kill: true, launch: false }));
     const m = generateMap(c, 4);
-    for (const w of pieces(m)) expect(['solid', 'bounce']).toContain(w.reaction);
+    for (const w of pieces(m)) expect(['solid', 'bounce', 'kill']).toContain(w.reaction);
     expect(JSON.stringify(generateMap(c, 4))).toBe(JSON.stringify(generateMap(c, 4)));
   });
 
