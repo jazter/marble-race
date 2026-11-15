@@ -192,7 +192,10 @@ body.mode-race #minimap { left: 12px; right: auto; top: 12px; bottom: auto; }
   .stat small { font-size: 9px; }
   .chips { top: 56px; max-width: 90%; }
   .leaderboard { top: auto; bottom: 66px; right: 8px; width: 180px; max-height: 38%; }
-  .toasts { bottom: auto; top: 90px; left: 8px; max-width: 70%; }
+  .toasts { bottom: auto; top: 90px; left: 8px; max-width: 62%; gap: 3px; }
+  /* phones: only the 2 newest toasts, compact, so they don't cover the track */
+  .toast { font-size: 11px; padding: 3px 7px; }
+  .toasts .toast:nth-last-child(n+3) { display: none; }
   .controls { gap: 4px; padding: 5px 6px; bottom: 8px; }
   .controls .btn { padding: 7px 8px; font-size: 13px; }
   .seg button { padding: 7px 4px; font-size: 12px; }
