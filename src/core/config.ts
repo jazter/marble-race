@@ -10,7 +10,8 @@
  *    -90 = left (-x), 180 = up (-y). Use `dirFromAngle()` from core/math.ts.
  */
 
-export type WallReaction = 'solid' | 'bounce' | 'slow' | 'kill' | 'launch';
+/** 'stun' = the marble is dazed for a moment (stops, floats, then goes on); 'kill' eliminates it. */
+export type WallReaction = 'solid' | 'bounce' | 'slow' | 'kill' | 'launch' | 'stun';
 export type SpecialWallReaction = Exclude<WallReaction, 'solid'>;
 /**
  * Outer-wall mode: one reaction for every outer wall, or 'mixed' — the generator
@@ -107,6 +108,8 @@ export interface GameConfig {
     bounceRestitution: number; // restitution used by 'bounce' walls (>1 adds energy)
     slowFactor: number; // 0..1 fraction of velocity removed per second while touching 'slow' walls
     launchStrength: number; // speed (m/s) added by 'launch' walls
+    /** Seconds a marble stays dazed after touching a 'stun' wall. */
+    stunTime: number;
   };
 
   objects: {
@@ -223,11 +226,12 @@ export function defaultConfig(): GameConfig {
     },
     walls: {
       boundary: 'mixed',
-      special: { bounce: true, slow: true, kill: true, launch: true },
+      special: { bounce: true, slow: true, kill: false, launch: true, stun: true },
       specialRatio: 0.25,
       bounceRestitution: 1.1,
       slowFactor: 0.85,
       launchStrength: 12,
+      stunTime: 1.2,
     },
     objects: {
       kinds: { propeller: true, arm2: true, saw: true, triangle: true, hammer: true, flipper: true },

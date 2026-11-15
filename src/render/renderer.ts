@@ -26,6 +26,7 @@ const FX_COLORS: Record<string, string> = {
   launch: '#38d6ff',
   slow: '#f2b134',
   kill: '#ff4a1a',
+  stun: '#c58cff',
 };
 
 interface Box {
@@ -670,6 +671,14 @@ export class Renderer {
         edge = '#0b5a8a';
         glow = '#38d6ff';
         break;
+      case 'stun': {
+        // electric: violet with a crackling yellow flicker
+        const k = 0.5 + 0.5 * Math.sin(t * 9 + w.id.length * 1.7);
+        fill = mix('#a86bff', '#ffe066', k * 0.35);
+        edge = '#3b1a73';
+        glow = '#c58cff';
+        break;
+      }
     }
     const sh = w.shape;
     const style = w.style ?? 'wall';
@@ -696,6 +705,7 @@ export class Renderer {
       ctx.lineWidth = Math.max(0.06, sh.thickness * 0.28);
       ctx.stroke();
       if (re === 'kill') this.drawLavaSpikes(sh.points, sh.thickness, t);
+      if (re === 'stun') this.drawSparks(sh.points, t, w.id.length);
     } else if (sh.type === 'polygon') {
       pathPoly(ctx, sh.points);
       if (scene) {
@@ -746,6 +756,56 @@ export class Renderer {
       ctx.fill();
     }
     if (re === 'launch' && w.launchDir) this.drawChevrons(sh, w.launchDir, t);
+    if (re === 'stun' && sh.type === 'circle') this.drawStunBolt(sh.center.x, sh.center.y, sh.radius * 0.75);
+  }
+
+  /** Zig-zag electric arcs crackling along a 'stun' wall (cosmetic). */
+  private drawSparks(points: Vec[], t: number, seed: number): void {
+    const ctx = this.ctx;
+    ctx.save();
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    for (let i = 0; i < points.length - 1; i++) {
+      const a = points[i];
+      const b = points[i + 1];
+      const l = Math.hypot(b.x - a.x, b.y - a.y);
+      if (l < 0.3) continue;
+      const ux = (b.x - a.x) / l;
+      const uy = (b.y - a.y) / l;
+      const n = Math.max(3, Math.floor(l / 0.35));
+      const ph = Math.floor(t * 14) + seed * 7 + i * 3; // re-roll the zigzag ~14 times/s
+      ctx.strokeStyle = 'rgba(255,240,150,0.9)';
+      ctx.lineWidth = 0.06;
+      ctx.beginPath();
+      for (let k = 0; k <= n; k++) {
+        const f = k / n;
+        const off = k === 0 || k === n ? 0 : (((Math.sin((ph + k) * 12.9898) * 43758.5453) % 1) - 0.5) * 0.28;
+        const x = a.x + ux * l * f - uy * off;
+        const y = a.y + uy * l * f + ux * off;
+        if (k === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  /** Lightning-bolt glyph (stun nubs). */
+  private drawStunBolt(cx: number, cy: number, r: number): void {
+    const ctx = this.ctx;
+    ctx.fillStyle = '#fff3a0';
+    ctx.strokeStyle = '#3b1a73';
+    ctx.lineWidth = 0.05;
+    ctx.beginPath();
+    ctx.moveTo(cx + r * 0.15, cy - r);
+    ctx.lineTo(cx - r * 0.45, cy + r * 0.1);
+    ctx.lineTo(cx - r * 0.02, cy + r * 0.1);
+    ctx.lineTo(cx - r * 0.2, cy + r);
+    ctx.lineTo(cx + r * 0.45, cy - r * 0.15);
+    ctx.lineTo(cx + r * 0.02, cy - r * 0.15);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
   }
 
   private drawLavaSpikes(points: Vec[], th: number, t: number): void {
@@ -1185,7 +1245,48 @@ export class Renderer {
         continue;
       }
       drawMarbleSprite(ctx, m.profile.skin, sx, sy, rPx, m.angle);
+      if (m.stunned && m.stunned > 0) this.drawDizzy(sx, sy, rPx, m.stunned);
     }
+  }
+
+  /** Dazed marble: a violet haze and little stars circling above it. */
+  private drawDizzy(sx: number, sy: number, rPx: number, left: number): void {
+    const ctx = this.ctx;
+    const fade = Math.min(1, left / 0.3);
+    ctx.save();
+    ctx.globalAlpha = 0.35 * fade;
+    ctx.fillStyle = '#b07cff';
+    ctx.beginPath();
+    ctx.arc(sx, sy, rPx * 1.05, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = fade;
+    const n = 3;
+    const ry = rPx * 0.35;
+    const rx = rPx * 1.0;
+    const cy = sy - rPx * 1.15;
+    const spin = this.clock * 5;
+    for (let i = 0; i < n; i++) {
+      const a = spin + (i / n) * Math.PI * 2;
+      const x = sx + Math.cos(a) * rx;
+      const y = cy + Math.sin(a) * ry;
+      const sz = Math.max(3 * this.dpr, rPx * 0.36) * (0.75 + 0.25 * Math.sin(a));
+      ctx.fillStyle = '#ffe066';
+      ctx.strokeStyle = '#6b3fb3';
+      ctx.lineWidth = Math.max(1, this.dpr * 0.8);
+      ctx.beginPath();
+      for (let k = 0; k < 10; k++) {
+        const rr = k % 2 === 0 ? sz : sz * 0.45;
+        const aa = -Math.PI / 2 + (k * Math.PI) / 5;
+        const px = x + Math.cos(aa) * rr;
+        const py = y + Math.sin(aa) * rr;
+        if (k === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      }
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+    }
+    ctx.restore();
   }
 
   private drawOffscreenWarnings(view: View, marbles: readonly MarbleState[]): void {

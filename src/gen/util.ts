@@ -45,6 +45,8 @@ export interface Ctx {
   lastChicane: number;
   counters: Record<string, number>;
   kills: number;
+  /** 'stun' pieces placed so far (capped higher than kills: they don't remove marbles). */
+  stuns: number;
   destroys: number;
   /** 0..1 amount of "stuff" per segment. */
   t: number;
@@ -80,6 +82,7 @@ export function makeCtx(cfg: GameConfig, rng: Rng): Ctx {
     lastChicane: 0,
     counters: {},
     kills: 0,
+    stuns: 0,
     destroys: 0,
     t: clamp(cfg.objects.density * 0.7 + cfg.map.difficulty * 0.3, 0, 1),
     diff: cfg.map.difficulty,
@@ -144,17 +147,21 @@ export function chicane(ctx: Ctx, dx: number): void {
 
 /* ------------------------------------------------------------- reactions */
 
-function enabledSpecials(ctx: Ctx, allowKill: boolean): SpecialWallReaction[] {
+/** 'kill' and 'stun' are "harmful": never on surfaces marbles must roll on, and capped per map. */
+function enabledSpecials(ctx: Ctx, allowHarm: boolean): SpecialWallReaction[] {
   const sp = ctx.cfg.walls.special;
   const out: SpecialWallReaction[] = [];
-  (['bounce', 'slow', 'launch', 'kill'] as SpecialWallReaction[]).forEach((k) => {
-    if (sp[k] && (allowKill || k !== 'kill')) out.push(k);
+  (['bounce', 'slow', 'launch', 'kill', 'stun'] as SpecialWallReaction[]).forEach((k) => {
+    if (!sp[k]) return;
+    if (k === 'kill' && !(allowHarm && ctx.kills < 3)) return;
+    if (k === 'stun' && !(allowHarm && ctx.stuns < 8)) return;
+    out.push(k);
   });
   return out;
 }
 
 export interface ReactionOpts {
-  /** Marbles must roll/land on it: never 'kill'. */
+  /** Marbles must roll/land on it: never 'kill' / 'stun'. */
   surface?: boolean;
   /** Preferred launch direction (unit). Default along flow, slightly diagonal. */
   dir?: Vec;
@@ -169,11 +176,12 @@ export function pickReaction(ctx: Ctx, opts: ReactionOpts = {}): { reaction: Wal
   const pickRoll = rng.next();
   const lateral = rng.range(-0.5, 0.5);
   if (roll >= ctx.cfg.walls.specialRatio) return { reaction: 'solid' };
-  let list = enabledSpecials(ctx, !opts.surface && ctx.kills < 3);
+  let list = enabledSpecials(ctx, !opts.surface);
   if (opts.noSlow || opts.surface) list = list.filter((k) => k !== 'slow');
   if (list.length === 0) return { reaction: 'solid' };
   const choice = list[Math.floor(pickRoll * list.length)];
   if (choice === 'kill') ctx.kills++;
+  if (choice === 'stun') ctx.stuns++;
   if (choice === 'launch') {
     const base = opts.dir ?? { x: lateral, y: 1 };
     const d = norm(base);

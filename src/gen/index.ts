@@ -304,7 +304,9 @@ function emitMixed(ctx: Ctx, chain: Vec[], protect: Range[], rng: Rng): void {
   // a seed don't change), at most 1 per 4 segments, never next to another lethal piece, never
   // on diagonal pieces (chicanes) and never where ramps meet the walls (marbles hug the walls there).
   const allAttach = [...attachYs.left, ...attachYs.right];
-  const maxKill = sp.kill ? Math.max(1, Math.floor(ctx.cfg.map.segments / 4)) : 0;
+  // these rare harmful pieces daze marbles ('stun') unless the player chose lethal walls only
+  const harm: WallReaction | null = sp.stun ? 'stun' : sp.kill ? 'kill' : null;
+  const maxKill = harm ? Math.max(1, Math.floor(ctx.cfg.map.segments / 4)) : 0;
   let kills = 0;
   let i = 0;
   while (i < subs.length) {
@@ -333,14 +335,14 @@ function emitMixed(ctx: Ctx, chain: Vec[], protect: Range[], rng: Rng): void {
         const pb = pts[pts.length - 1];
         const vertical = Math.abs(pb.x - pa.x) <= Math.abs(pb.y - pa.y) * Math.tan(12 * DEG);
         const nearRamp = allAttach.some((y) => y > y0 - 1.5 && y < y1 + 1.5);
-        if (vertical && !nearRamp) want = 'kill';
+        if (vertical && !nearRamp && harm) want = harm;
       }
       if (want === 'slow' && (st.sinceSlow < 3 || st.r === 'launch' || attachYs[first.side as 'left' | 'right'].some((y) => y > y0 && y < y1))) want = 'solid';
       if (want === 'launch' && (st.r === 'launch' || st.r === 'slow')) want = 'solid';
       reaction = want;
       st.sinceSlow = want === 'slow' ? 0 : st.sinceSlow + 1;
-      st.sinceKill = want === 'kill' ? 0 : st.sinceKill + 1;
-      if (want === 'kill') kills++;
+      st.sinceKill = want === harm ? 0 : st.sinceKill + 1;
+      if (want === harm) kills++;
       st.r = want;
       if (want === 'launch') {
         const inward = first.side === 'left' ? 1 : -1;

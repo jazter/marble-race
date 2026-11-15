@@ -47,6 +47,8 @@ import { combinePhysics, type SwitchRuntime, SWITCH_REST } from './switches';
 
 /** Each marble can trigger flippers at most this many times per race. */
 const MAX_FLIPS_PER_MARBLE = 3;
+/** Seconds after recovering from a stun before a marble can be stunned again. */
+const STUN_COOLDOWN = 1.5;
 const VEL_ITERS = 8;
 const POS_ITERS = 3;
 const EFFECT_COOLDOWN = 1; // s, grow/shrink/destroy/field per (marble, object)
@@ -96,6 +98,10 @@ class SimImpl implements Simulation {
   /** Times each marble has triggered a flipper (capped by MAX_FLIPS_PER_MARBLE). */
   private flipCount: number[] = [];
   private lastKick: number[] = [];
+  /** Sim time until which each marble is dazed by a 'stun' wall (0 = not stunned). */
+  private stunUntil: number[] = [];
+  /** Sim time a marble's last stun ended (stun cooldown, so it isn't chain-stunned). */
+  private stunEnded: number[] = [];
   private hist: number[][] = [];
 
   private wallReaction: WallReaction[] = [];
@@ -602,6 +608,7 @@ class SimImpl implements Simulation {
 
     this.syncMarbles();
     this.processContacts();
+    this.processStun();
     this.updateSwitchTimers();
     this.processFinish();
     this.processProgressAndBounds();
@@ -690,6 +697,8 @@ class SimImpl implements Simulation {
           }
         } else if (reaction === 'kill') {
           this.eliminate(m, 'wall');
+        } else if (reaction === 'stun') {
+          this.stun(m);
         } else if (reaction === 'launch') {
           if (!this.fxCooldownOk(this.keyOfWall[r.idx], m.id, LAUNCH_COOLDOWN)) continue;
           const wall = this.map.walls[r.idx];
@@ -807,6 +816,46 @@ class SimImpl implements Simulation {
       if (outside) m.offscreenTime += SIM_DT;
       else m.offscreenTime = 0;
       if (offscreenKill && m.offscreenTime > offscreenGrace) this.eliminate(m, 'offscreen');
+    }
+  }
+
+  /**
+   * 'stun' wall: the marble is dazed for config.walls.stunTime seconds — it loses almost
+   * all its speed and floats in place (no gravity, heavy damping), then carries on. A short
+   * cooldown after recovering stops the same wall from stunning it again immediately.
+   */
+  private stun(m: MarbleState): void {
+    if ((this.stunUntil[m.id] ?? 0) > this.time) return;
+    if (this.time - (this.stunEnded[m.id] ?? -1e9) < STUN_COOLDOWN) return;
+    const body = this.bodies[m.id];
+    if (!body) return;
+    this.stunUntil[m.id] = this.time + this.config.walls.stunTime;
+    const v = body.getLinearVelocity();
+    body.setLinearVelocity(new Vec2(v.x * 0.12, v.y * 0.12));
+    body.setGravityScale(0);
+    body.setLinearDamping(6);
+    m.stunned = this.config.walls.stunTime;
+    this.emit({ t: this.time, type: 'effect', marbleId: m.id, effect: 'stun', x: m.x, y: m.y });
+  }
+
+  private processStun(): void {
+    for (const m of this.marbles) {
+      const until = this.stunUntil[m.id] ?? 0;
+      if (until <= 0) continue;
+      const left = until - this.time;
+      if (left > 1e-9 && m.status === 'racing') {
+        m.stunned = left;
+        continue;
+      }
+      // recover (or the marble finished / was eliminated meanwhile)
+      this.stunUntil[m.id] = 0;
+      this.stunEnded[m.id] = this.time;
+      m.stunned = 0;
+      const body = this.bodies[m.id];
+      if (body) {
+        body.setGravityScale(1);
+        body.setLinearDamping(this.config.physics.linearDamping);
+      }
     }
   }
 

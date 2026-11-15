@@ -41,6 +41,8 @@ export interface MarbleState {
   offscreenTime: number;
   /** Id of the monster currently holding this marble (its x/y follow the monster). */
   heldBy?: string;
+  /** Seconds left of being dazed by a 'stun' wall (absent / 0 when not stunned). */
+  stunned?: number;
 }
 
 export interface LinkPose {

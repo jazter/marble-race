@@ -38,3 +38,14 @@ describe('loadConfig migrations', () => {
     expect(loadConfig().monsters.count).toBe(defaultConfig().monsters.count);
   });
 });
+
+describe('stun migration', () => {
+  it('turns lethal special walls into stun walls for configs saved before stun existed', () => {
+    const old = defaultConfig() as unknown as { walls: { special: Record<string, boolean> } };
+    old.walls.special = { bounce: true, slow: true, kill: true, launch: true };
+    fakeStorage({ [KEY]: JSON.stringify(old) });
+    const cfg = loadConfig();
+    expect(cfg.walls.special.kill).toBe(false);
+    expect(cfg.walls.special.stun).toBe(true);
+  });
+});

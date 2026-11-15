@@ -31,6 +31,7 @@ const REACTIONS: Opt[] = [
   ['solid', 'Sólida'],
   ['bounce', 'Rebote'],
   ['slow', 'Lenta'],
+  ['stun', 'Aturdir'],
   ['kill', 'Eliminar'],
   ['launch', 'Lanzar'],
 ];
@@ -112,6 +113,7 @@ export const SECTIONS: Section[] = [
         options: [
           ['bounce', 'Rebote'],
           ['slow', 'Lenta'],
+          ['stun', 'Aturdir'],
           ['kill', 'Eliminar'],
           ['launch', 'Lanzar'],
         ],
@@ -120,6 +122,7 @@ export const SECTIONS: Section[] = [
       { kind: 'range', label: 'Rebote (paredes de rebote)', path: 'walls.bounceRestitution', min: 0.5, max: 2, step: 0.01, decimals: 2 },
       { kind: 'range', label: 'Lentitud (paredes lentas)', path: 'walls.slowFactor', min: 0, max: 1, step: 0.01, percent: true },
       { kind: 'range', label: 'Lanzamiento (paredes de lanzar)', path: 'walls.launchStrength', min: 0, max: 40, step: 0.5, unit: ' m/s', decimals: 1 },
+      { kind: 'range', label: 'Aturdimiento (paredes de aturdir)', path: 'walls.stunTime', min: 0.3, max: 4, step: 0.1, unit: ' s', decimals: 1, hint: 'Cuánto tiempo queda la canica aturdida' },
     ],
   },
   {

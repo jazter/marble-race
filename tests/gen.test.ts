@@ -146,7 +146,7 @@ describe('generator', () => {
       x.objects.zones = false;
       x.switches.actions = { lowGravity: true, highGravity: false, tiltGravity: false, reverseGravity: false, reverseMechanisms: false, fastMechanisms: false, wind: false, bouncy: false, openGate: false };
       x.switches.frequency = 1;
-      x.walls.special = { bounce: false, slow: false, kill: false, launch: false };
+      x.walls.special = { bounce: false, slow: false, kill: false, launch: false, stun: false };
       x.walls.specialRatio = 1;
     });
     for (let seed = 1; seed <= 8; seed++) {
@@ -496,7 +496,7 @@ describe('mixed boundary', () => {
   const mixedCfg = (extra?: (c: GameConfig) => void): GameConfig => cfgWith((c) => ((c.walls.boundary = 'mixed'), (c.map.segments = 10), extra?.(c)));
   const pieces = (m: MapDef) => m.walls.filter((w) => /^b\d+$/.test(w.id));
 
-  it('gives several different reactions, launch pushes along the flow, kill is rare', () => {
+  it('gives several different reactions, launch pushes along the flow, rare harmful pieces daze (stun), never kill', () => {
     const seen = new Set<string>();
     let kills = 0;
     let total = 0;
@@ -504,9 +504,9 @@ describe('mixed boundary', () => {
       const m = generateMap(mixedCfg(), seed);
       const ps0 = pieces(m);
       // lethal pieces: capped (1 per 4 segments), never adjacent, never diagonal
-      const k = ps0.filter((w) => w.reaction === 'kill');
+      const k = ps0.filter((w) => w.reaction === 'stun');
       expect(k.length).toBeLessThanOrEqual(Math.floor(10 / 4));
-      for (let i = 1; i < ps0.length; i++) expect(ps0[i].reaction === 'kill' && ps0[i - 1].reaction === 'kill').toBe(false);
+      for (let i = 1; i < ps0.length; i++) expect(ps0[i].reaction === 'stun' && ps0[i - 1].reaction === 'stun').toBe(false);
       for (const w of k) {
         if (w.shape.type !== 'polyline') continue;
         const a = w.shape.points[0];
@@ -517,6 +517,7 @@ describe('mixed boundary', () => {
       total += ps0.length;
       for (const w of ps0) {
         expect(w.boundary).toBe(true);
+        expect(w.reaction).not.toBe('kill');
         seen.add(w.reaction);
         if (w.reaction === 'launch') {
           expect(w.launchDir).toBeDefined();
@@ -574,7 +575,7 @@ describe('mixed boundary', () => {
   });
 
   it('respects disabled special reactions and is deterministic', () => {
-    const c = mixedCfg((x) => (x.walls.special = { bounce: true, slow: false, kill: true, launch: false }));
+    const c = mixedCfg((x) => (x.walls.special = { bounce: true, slow: false, kill: true, launch: false, stun: false }));
     const m = generateMap(c, 4);
     for (const w of pieces(m)) expect(['solid', 'bounce', 'kill']).toContain(w.reaction);
     expect(JSON.stringify(generateMap(c, 4))).toBe(JSON.stringify(generateMap(c, 4)));
@@ -674,7 +675,7 @@ describe('pinball and gableSplit segments', () => {
     for (let seed = 1; seed <= 8; seed++) {
       const c = cfg10((x) => {
         x.objects.kinds = { propeller: false, arm2: false, saw: false, triangle: false, hammer: false, flipper: false };
-        x.walls.special = { bounce: true, slow: false, kill: false, launch: false };
+        x.walls.special = { bounce: true, slow: false, kill: false, launch: false, stun: false };
         x.objects.zones = false;
       });
       const m = generateMap(c, seed);
@@ -716,5 +717,25 @@ describe('pinball and gableSplit segments', () => {
         }
       }
     }
+  });
+});
+
+describe('stun replaces kill by default', () => {
+  it('default maps have no lethal walls but do have stun walls', () => {
+    let stun = 0;
+    for (let seed = 1; seed <= 10; seed++) {
+      const m = generateMap(defaultConfig(), seed);
+      for (const w of m.walls) {
+        expect(w.reaction).not.toBe('kill');
+        if (w.reaction === 'stun') stun++;
+      }
+    }
+    expect(stun).toBeGreaterThan(5);
+  });
+  it('kill walls only appear when the player enables them', () => {
+    const c = cfgWith((x) => (x.walls.special = { bounce: true, slow: true, kill: true, launch: true, stun: false }));
+    let kill = 0;
+    for (let seed = 1; seed <= 10; seed++) for (const w of generateMap(c, seed).walls) if (w.reaction === 'kill') kill++;
+    expect(kill).toBeGreaterThan(0);
   });
 });

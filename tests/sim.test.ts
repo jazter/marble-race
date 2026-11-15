@@ -440,3 +440,28 @@ describe('timed switches', () => {
     for (let i = 1; i < on.length; i++) expect(on[i] - off[i - 1]).toBeGreaterThanOrEqual(4 - 1e-6); // rest
   });
 });
+
+describe('stun walls', () => {
+  it('daze a marble (slow + float) without eliminating it, then it carries on', () => {
+    const map = sampleMap(1);
+    map.walls = map.walls.map((w) => (w.id === 'ramp1' ? { ...w, reaction: 'stun' as const } : w));
+    const cfg = sampleConfig(1);
+    const sim = createSimulation(map, sampleRoster(1), cfg);
+    let stunnedSeen = false;
+    let stunEvent = false;
+    let recovered = false;
+    while (!sim.isOver() && sim.time < 40) {
+      sim.step();
+      for (const e of sim.drainEvents()) if (e.type === 'effect' && e.effect === 'stun') stunEvent = true;
+      const m = sim.getMarbles()[0];
+      if ((m.stunned ?? 0) > 0) {
+        stunnedSeen = true;
+        expect(Math.hypot(m.vx, m.vy)).toBeLessThan(4); // floating, not falling
+      } else if (stunnedSeen) recovered = true;
+    }
+    const m = sim.getMarbles()[0];
+    expect(stunEvent && stunnedSeen && recovered).toBe(true);
+    expect(m.eliminatedReason).not.toBe('wall');
+    sim.destroy();
+  });
+});

@@ -25,6 +25,13 @@ export function loadConfig(): GameConfig {
       mergeInto(cfg as unknown as Record<string, unknown>, saved);
       // Configs saved before monster groups existed stored a plain monster count (old
       // default 3). The field now means groups per map, so adopt the new monster defaults.
+      // Configs saved before 'stun' walls existed: lethal special walls are replaced by
+      // dazing ones (the player can still turn 'Eliminar' back on).
+      const sw = saved && typeof saved === 'object' ? (saved as { walls?: { special?: Record<string, unknown> } }).walls?.special : undefined;
+      if (sw && typeof sw === 'object' && !('stun' in sw)) {
+        cfg.walls.special.kill = false;
+        cfg.walls.special.stun = true;
+      }
       const m = saved && typeof saved === 'object' ? (saved as { monsters?: Record<string, unknown> }).monsters : undefined;
       if (m && typeof m === 'object' && !('groupSize' in m)) {
         const d = defaultConfig().monsters;

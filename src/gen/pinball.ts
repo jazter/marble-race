@@ -114,7 +114,8 @@ function trapOk(ctx: Ctx, t: GableTrap, c: number): boolean {
     case 'triangulos':
       return kindEnabled(ctx, 'triangle') && roomHalf >= 0.9;
     case 'asesina':
-      return cfg.walls.special.kill && ctx.kills < 3;
+      // "trap nubs": dazing (stun) by default, lethal only if the player enabled kill walls
+      return (cfg.walls.special.stun && ctx.stuns < 8) || (cfg.walls.special.kill && ctx.kills < 3);
     case 'miel':
       return cfg.walls.special.slow;
     case 'helice':
@@ -205,11 +206,14 @@ function buildTrap(ctx: Ctx, lane: Lane, t: GableTrap, variant: number): void {
       break;
     }
     case 'asesina': {
-      // short lethal nubs on the outer wall (never on the surface marbles have to follow)
+      // short trap nubs on the outer wall (never on the surface marbles have to follow):
+      // they daze marbles ('stun'); lethal 'kill' only when the player enabled it without stun
       const wallX = variant % 2 === 0 ? lane.xa : lane.xb;
-      for (let i = 0; i < 2 && ctx.kills < 3; i++) {
-        addWall(ctx, { type: 'circle', center: { x: wallX, y: lane.ya + len * (0.3 + 0.4 * i) }, radius: 0.5 }, 'bumper', { reaction: 'kill' });
-        ctx.kills++;
+      const useStun = cfg.walls.special.stun;
+      for (let i = 0; i < 2 && (useStun ? ctx.stuns < 8 : ctx.kills < 3); i++) {
+        addWall(ctx, { type: 'circle', center: { x: wallX, y: lane.ya + len * (0.3 + 0.4 * i) }, radius: 0.5 }, 'bumper', { reaction: useStun ? 'stun' : 'kill' });
+        if (useStun) ctx.stuns++;
+        else ctx.kills++;
       }
       // a bumper facing the nub keeps marbles moving around instead of hugging the wall
       addWall(ctx, { type: 'circle', center: { x: xm, y: ym }, radius: 0.6 }, 'bumper', { reaction: bumperReaction(ctx) });
@@ -329,7 +333,7 @@ function removePinchCircles(ctx: Ctx, fromIndex: number, lanes: { xa: number; xb
   const keep: typeof ctx.walls = ctx.walls.slice(0, fromIndex);
   for (let i = fromIndex; i < ctx.walls.length; i++) {
     const w = ctx.walls[i];
-    if (w.shape.type === 'circle' && w.reaction !== 'kill') {
+    if (w.shape.type === 'circle' && w.reaction !== 'kill' && w.reaction !== 'stun') {
       const { center, radius } = w.shape;
       let pinch = false;
       for (const g of segs) {
