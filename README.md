@@ -63,7 +63,7 @@ Todas las opciones están en el panel lateral (⚙ en móvil). *Restablecer valo
 
 | Opción | Por defecto |
 |---|---|
-| Mecanismos | Hélice, brazo doble, sierra, triángulo, martillo (todos) |
+| Mecanismos | Hélice, brazo doble, sierra, triángulo, martillo y paletas de pinball (se activan al tocarlas y lanzan la canica hacia arriba; ignoran la velocidad de objetos y los efectos de interruptor) |
 | Efectos | Agrandar, achicar, destruir, atraer, repeler (todos) |
 | Densidad / velocidad | 50 % / 1× |
 | Probabilidad de efecto | 60 % |

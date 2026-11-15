@@ -126,7 +126,7 @@ describe('generator', () => {
   it('never uses disabled kinds, effects or switches', () => {
     for (let seed = 1; seed <= 15; seed++) {
       const c = cfgWith((x) => {
-        x.objects.kinds = { propeller: true, arm2: false, saw: false, triangle: true, hammer: false };
+        x.objects.kinds = { propeller: true, arm2: false, saw: false, triangle: true, hammer: false, flipper: false };
         x.objects.effects = { grow: true, shrink: false, destroy: false, attract: false, repel: true };
         x.objects.effectChance = 1;
         x.switches.enabled = false;

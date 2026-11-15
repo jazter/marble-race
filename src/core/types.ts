@@ -60,7 +60,14 @@ export type LinkMotion =
   /** angle(t) = phase + speed * t  (speed in rad/s, affected by objects.speed and switches) */
   | { type: 'rotate'; speed: number; phase: number }
   /** angle(t) = center + amplitude * sin(phase + 2π * frequency * t) */
-  | { type: 'oscillate'; center: number; amplitude: number; frequency: number; phase: number };
+  | { type: 'oscillate'; center: number; amplitude: number; frequency: number; phase: number }
+  /**
+   * Pinball flipper (event driven): rests at angle `rest`; when a racing marble touches
+   * this link it swings to `up` at `upSpeed` rad/s (not scaled by objects.speed, so the
+   * kick stays predictable), holds `hold` s, swings back at `downSpeed` rad/s, and can't
+   * fire again until `cooldown` s after it started swinging back.
+   */
+  | { type: 'flipper'; rest: number; up: number; upSpeed: number; downSpeed: number; hold: number; cooldown: number };
 
 export interface MechLink {
   shapes: LocalShape[];

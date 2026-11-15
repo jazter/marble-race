@@ -9,6 +9,7 @@ import { Rng } from '../core/rng';
 import type { MapDef, Monster, StaticShape, Vec } from '../core/types';
 import { LIBRARY, maybeSwitch, type SegmentDef } from './segments';
 import { galtonAvailable, laneLog, lanesAvailable } from './boards';
+import { gableAvailable, gableLog, pinballAvailable } from './pinball';
 import {
   MONSTER_SEED_SALT,
   type SegRec,
@@ -116,11 +117,13 @@ function buildFinish(ctx: Ctx): MapDef['finish'] {
 }
 
 /** Segment types that reset the "gap side" tracking: something in them redirects the marbles. */
-const REDIRECTING = new Set(['funnel', 'pegs', 'propellers', 'arms', 'saws', 'triangles', 'hammers', 'funnelGate', 'rotorChamber', 'galton', 'lanes']);
+const REDIRECTING = new Set(['funnel', 'pegs', 'propellers', 'arms', 'saws', 'triangles', 'hammers', 'funnelGate', 'rotorChamber', 'galton', 'lanes', 'pinball', 'gableSplit']);
 const SPECIAL = new Set(['galton', 'lanes']);
+/** Only placed by the planner (never picked at random). */
+const PLANNED_ONLY = new Set(['pinball', 'gableSplit']);
 
 function pickSegment(ctx: Ctx, prev: string | null, first: boolean, used: Record<string, number>, maxSpecial: number): SegmentDef {
-  let cands = LIBRARY.filter((d) => !d.regroup && d.available(ctx) && d.type !== prev && !(SPECIAL.has(d.type) && (used[d.type] ?? 0) >= maxSpecial));
+  let cands = LIBRARY.filter((d) => !d.regroup && d.available(ctx) && d.type !== prev && !PLANNED_ONLY.has(d.type) && !(SPECIAL.has(d.type) && (used[d.type] ?? 0) >= maxSpecial));
   if (first) {
     const soft = cands.filter((d) => d.type === 'zigzag' || d.type === 'funnel' || d.type === 'pegs');
     if (soft.length) cands = soft;
@@ -148,16 +151,31 @@ export function planRegroups(count: number, nSeg: number): Set<number> {
   return out;
 }
 
-/** Segment index -> 'galton' | 'lanes': one of each (seeded slots, never first, never adjacent to each other, never a regroup). */
-export function planSpecials(nSeg: number, regroupAt: Set<number>, rng: Rng, want: ('galton' | 'lanes')[]): Map<number, 'galton' | 'lanes'> {
-  const out = new Map<number, 'galton' | 'lanes'>();
+export type SpecialKind = 'galton' | 'lanes' | 'pinball' | 'gableSplit';
+
+/**
+ * Segment index -> special kind (seeded slots, never first, never a regroup). galton / lanes keep to
+ * non-adjacent slots; pinball / gableSplit (only with >= 8 segments, own Rng) avoid being adjacent to any
+ * other special when a slot allows it.
+ */
+export function planSpecials(nSeg: number, regroupAt: Set<number>, rng: Rng, want: SpecialKind[], rng2?: Rng): Map<number, SpecialKind> {
+  const out = new Map<number, SpecialKind>();
   if (nSeg < 6) return out;
-  const order = rng.shuffle(want.slice());
+  const order = rng.shuffle(want.filter((k) => k === 'galton' || k === 'lanes'));
   for (const kind of order) {
     const free: number[] = [];
     for (let i = 1; i < nSeg; i++) if (!regroupAt.has(i) && !out.has(i) && ![...out.keys()].some((k) => Math.abs(k - i) <= 1)) free.push(i);
     const pick = free.length ? free[Math.floor(rng.next() * free.length)] : -1;
     if (pick >= 0) out.set(pick, kind);
+  }
+  if (nSeg >= 8 && rng2) {
+    for (const kind of rng2.shuffle(want.filter((k) => k === 'pinball' || k === 'gableSplit'))) {
+      const open: number[] = [];
+      for (let i = 1; i < nSeg; i++) if (!regroupAt.has(i) && !out.has(i)) open.push(i);
+      const apart = open.filter((i) => ![...out.keys()].some((k) => Math.abs(k - i) <= 1));
+      const pool = apart.length ? apart : open;
+      if (pool.length) out.set(pool[Math.floor(rng2.next() * pool.length)], kind);
+    }
   }
   return out;
 }
@@ -330,6 +348,7 @@ function emitMixed(ctx: Ctx, chain: Vec[], protect: Range[], rng: Rng): void {
 export function generateMap(config: GameConfig, seed: number): MapDef {
   const rng = new Rng(seed);
   laneLog.length = 0;
+  gableLog.length = 0;
   const ctx = makeCtx(config, rng);
   const start = buildStart(ctx);
   const marks: { type: string; idx: number }[] = [{ type: 'start', idx: 0 }];
@@ -341,10 +360,12 @@ export function generateMap(config: GameConfig, seed: number): MapDef {
   const lethalRanges: [number, number, number][] = [];
   const nSeg = Math.max(0, Math.floor(config.map.segments));
   const regroupAt = planRegroups(config.map.regroups ?? 0, nSeg);
-  const wantSpecial: ('galton' | 'lanes')[] = [];
+  const wantSpecial: SpecialKind[] = [];
   if (galtonAvailable(ctx)) wantSpecial.push('galton');
   if (lanesAvailable(ctx)) wantSpecial.push('lanes');
-  const specialAt = planSpecials(nSeg, regroupAt, new Rng((seed ^ 0x47414c54) >>> 0), wantSpecial);
+  if (pinballAvailable(ctx)) wantSpecial.push('pinball');
+  if (gableAvailable(ctx)) wantSpecial.push('gableSplit');
+  const specialAt = planSpecials(nSeg, regroupAt, new Rng((seed ^ 0x47414c54) >>> 0), wantSpecial, new Rng((seed ^ 0x50494e42) >>> 0));
   const usedType: Record<string, number> = {};
   const maxSpecial = nSeg >= 12 ? 2 : 1;
   let lastRegroup: string | null = null;
@@ -420,7 +441,7 @@ export function generateMap(config: GameConfig, seed: number): MapDef {
   }
   if (config.walls.boundary === 'mixed') {
     const protect: Range[] = [[-Infinity, 2], [finishY0, Infinity]];
-    for (const rec of segRecs) if (rec.regroup || rec.type === 'galton' || rec.type === 'lanes') protect.push([rec.y0, rec.y1]);
+    for (const rec of segRecs) if (rec.regroup || rec.type === 'galton' || rec.type === 'lanes' || rec.type === 'pinball' || rec.type === 'gableSplit') protect.push([rec.y0, rec.y1]);
     emitMixed(ctx, chain, protect, new Rng((seed ^ 0x6d697864) >>> 0));
   } else emitBoundary(ctx, chain, killRanges);
 
@@ -449,7 +470,13 @@ export function generateMap(config: GameConfig, seed: number): MapDef {
     const links = m.links.map((l, i) => {
       if (i !== 0) return l;
       const mo = l.motion;
-      return { ...l, motion: mo.type === 'rotate' ? { ...mo, phase: mo.phase + phi } : { ...mo, center: mo.center + phi } };
+      const motion =
+        mo.type === 'rotate'
+          ? { ...mo, phase: mo.phase + phi }
+          : mo.type === 'oscillate'
+            ? { ...mo, center: mo.center + phi }
+            : { ...mo, rest: mo.rest + phi, up: mo.up + phi };
+      return { ...l, motion };
     });
     return { ...m, pivot: rp(m.pivot), links };
   });

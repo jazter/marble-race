@@ -136,6 +136,7 @@ export const SECTIONS: Section[] = [
           ['saw', 'Sierra'],
           ['triangle', 'Triángulo'],
           ['hammer', 'Martillo'],
+          ['flipper', 'Paletas de pinball'],
         ],
       },
       {

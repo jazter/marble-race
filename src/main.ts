@@ -617,6 +617,9 @@ if (import.meta.env.DEV) (window as unknown as { __game: unknown }).__game = { g
 if (import.meta.env.DEV && new URLSearchParams(location.search).has('monsters-demo')) {
   // dev-only visual test page for the monsters (stripped from production builds)
   void import('./dev/monstersDemo').then((m) => m.startMonstersDemo(renderer, canvas));
+} else if (import.meta.env.DEV && new URLSearchParams(location.search).has('flipper-demo')) {
+  // dev-only: real sim with two pinball flippers (stripped from production builds)
+  void import('./dev/flipperDemo').then((m) => m.startFlipperDemo(renderer));
 } else {
   requestAnimationFrame(frame);
 }

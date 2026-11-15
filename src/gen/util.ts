@@ -373,3 +373,48 @@ export function addSwitchObj(ctx: Ctx, s: Omit<Switch, 'id'>): Switch {
   ctx.switches.push(sw);
   return sw;
 }
+
+/* -------------------------------------------------------------- flippers */
+
+export const FLIPPER_TILT = 0.45;
+const FLIPPER_SWING = 0.95;
+
+/** Resting slope (rad below horizontal) of the flippers in this course, kept in one place. */
+export interface FlipperOpts {
+  /** length of the bar (pivot to tip) */
+  L: number;
+  /** +1: the bar extends toward +x (pivot on the left end), -1: toward -x (pivot on the right end) */
+  dir: 1 | -1;
+  /** resting slope below horizontal (rad); the flipper swings up to FLIPPER_SWING - tilt above it */
+  tilt?: number;
+  /** swing speed up (rad/s): 5-6 for ~12 m rise, ~4 for ramp flippers */
+  upSpeed?: number;
+}
+
+/**
+ * Pinball flipper: one link, pivot at one end, tapered bar. Rests sloping DOWN away from the pivot
+ * (toward the drain) and swings UP when a marble touches it. Canonical frame (y down, angle clockwise-positive).
+ */
+export function makeFlipper(ctx: Ctx, pivot: Vec, o: FlipperOpts): Mechanism {
+  const tilt = o.tilt ?? FLIPPER_TILT;
+  const L = o.L;
+  const base = o.dir > 0 ? 0 : Math.PI;
+  const m: Mechanism = {
+    id: nid(ctx, 'flip'),
+    kind: 'flipper',
+    pivot,
+    links: [
+      {
+        shapes: [
+          { type: 'polygon', points: [{ x: 0, y: -0.22 }, { x: L, y: -0.1 }, { x: L, y: 0.1 }, { x: 0, y: 0.22 }] },
+          { type: 'circle', cx: 0, cy: 0, r: 0.22 },
+          { type: 'circle', cx: L, cy: 0, r: 0.1 },
+        ],
+        motion: { type: 'flipper', rest: base + o.dir * tilt, up: base - o.dir * (FLIPPER_SWING - tilt), upSpeed: o.upSpeed ?? 5.5, downSpeed: 4, hold: 0.12, cooldown: 0.35 },
+      },
+    ],
+    effect: null,
+  };
+  ctx.mechs.push(m);
+  return m;
+}

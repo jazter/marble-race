@@ -125,6 +125,8 @@ export class Renderer {
   private courseBox: Box = { x0: 0, y0: 0, x1: 1, y1: 1 };
   private gateAlpha = new Map<string, number>();
   private fxLast = new Map<string, number>();
+  /** Flipper cosmetics: was it swinging up last frame + recent angles for the motion trail. */
+  private flipFx = new Map<string, { active: boolean; trail: number[] }>();
   private particles = new ParticleSystem();
   private clock = 0;
   private bgKind: BackgroundKind;
@@ -207,6 +209,7 @@ export class Renderer {
     this.gateAlpha.clear();
     for (const g of map.gates) this.gateAlpha.set(g.id, 1);
     this.fxLast.clear();
+    this.flipFx.clear();
     this.particles.clear();
     this.courseBox = computeCourseBox(map);
     this.pv.fitted = true;
@@ -530,9 +533,11 @@ export class Renderer {
       const col = m.effect ? EFFECT_COLORS[m.effect] : STEEL;
       m.links.forEach((link, li) => {
         const lp = p.links[li];
-        if (lp) this.drawLink(link.shapes, lp.x, lp.y, lp.angle, col, m.effect === 'destroy');
+        if (!lp) return;
+        if (link.motion.type === 'flipper') this.drawFlipper(m.id + '#' + li, link.shapes, lp);
+        else this.drawLink(link.shapes, lp.x, lp.y, lp.angle, col, m.effect === 'destroy');
       });
-      for (const lp of p.links) this.drawBolt(lp.x, lp.y);
+      if (m.kind !== 'flipper') for (const lp of p.links) this.drawBolt(lp.x, lp.y);
     });
 
     // switches
@@ -910,6 +915,128 @@ export class Renderer {
         }
       }
     }
+    ctx.restore();
+  }
+
+  private flipperPath(shapes: LocalShape[]): void {
+    const ctx = this.ctx;
+    ctx.beginPath();
+    for (const sh of shapes) {
+      if (sh.type === 'box') {
+        ctx.save();
+        ctx.translate(sh.cx, sh.cy);
+        ctx.rotate(sh.angle);
+        ctx.rect(-sh.hw, -sh.hh, sh.hw * 2, sh.hh * 2);
+        ctx.restore();
+      } else if (sh.type === 'circle') {
+        ctx.moveTo(sh.cx + sh.r, sh.cy);
+        ctx.arc(sh.cx, sh.cy, sh.r, 0, Math.PI * 2);
+      } else if (sh.points.length) {
+        // consistent winding, so overlapping shapes union under the nonzero rule
+        let area = 0;
+        const n = sh.points.length;
+        for (let i = 0; i < n; i++) {
+          const a = sh.points[i];
+          const b = sh.points[(i + 1) % n];
+          area += a.x * b.y - b.x * a.y;
+        }
+        const pts = area < 0 ? sh.points.slice().reverse() : sh.points;
+        ctx.moveTo(pts[0].x, pts[0].y);
+        for (let i = 1; i < n; i++) ctx.lineTo(pts[i].x, pts[i].y);
+        ctx.closePath();
+      }
+    }
+  }
+
+  /**
+   * Pinball flipper: glossy red body with a white highlight and dark outline, chrome pivot
+   * cap; brightens + leaves a short trail and a "thwack" burst while swinging up.
+   */
+  private drawFlipper(key: string, shapes: LocalShape[], lp: MechanismPose['links'][number]): void {
+    const ctx = this.ctx;
+    let fx = this.flipFx.get(key);
+    if (!fx) this.flipFx.set(key, (fx = { active: false, trail: [] }));
+    const active = !!lp.active;
+    // local tip = farthest shape point from the pivot (for particles)
+    let tx = 0;
+    let ty = 0;
+    let best = -1;
+    let pivotR = 0.3;
+    for (const sh of shapes) {
+      const pts = sh.type === 'polygon' ? sh.points : sh.type === 'circle' ? [{ x: sh.cx + sh.r, y: sh.cy }] : [{ x: sh.cx + sh.hw, y: sh.cy }];
+      for (const q of pts) {
+        const d = Math.hypot(q.x, q.y);
+        if (d > best) ((best = d), (tx = q.x), (ty = q.y));
+      }
+      if (sh.type === 'circle' && Math.hypot(sh.cx, sh.cy) < 0.05) pivotR = Math.max(pivotR, sh.r);
+    }
+    if (active && !fx.active) {
+      const c = Math.cos(lp.angle);
+      const sn = Math.sin(lp.angle);
+      const wx = lp.x + tx * c - ty * sn;
+      const wy = lp.y + tx * sn + ty * c;
+      this.particles.burst(wx, wy, '#ffffff', 8, 6);
+      this.particles.burst(wx, wy, '#ff5a4a', 8, 5);
+      this.particles.ring(wx, wy, '#ffd9d2', 1.1, 0.3);
+    }
+    fx.active = active;
+    // trail of the last few angles while moving
+    const last = fx.trail[fx.trail.length - 1];
+    if (last === undefined || Math.abs(lp.angle - last) > 0.03) {
+      fx.trail.push(lp.angle);
+      if (fx.trail.length > 5) fx.trail.shift();
+    } else if (fx.trail.length > 1) fx.trail.shift();
+    ctx.save();
+    ctx.translate(lp.x, lp.y);
+    if (fx.trail.length > 1) {
+      for (let i = 0; i < fx.trail.length - 1; i++) {
+        ctx.save();
+        ctx.rotate(fx.trail[i]);
+        this.flipperPath(shapes);
+        ctx.fillStyle = `rgba(255,120,100,${0.06 + 0.07 * i})`;
+        ctx.fill();
+        ctx.restore();
+      }
+    }
+    ctx.rotate(lp.angle);
+    this.flipperPath(shapes);
+    const body = active ? '#ff6f5e' : '#d8323a';
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = '#2a0a10';
+    ctx.lineWidth = 0.17;
+    ctx.stroke();
+    const g = ctx.createLinearGradient(0, -pivotR * 1.1, 0, pivotR * 1.1);
+    g.addColorStop(0, lighten(body, 0.45));
+    g.addColorStop(0.45, body);
+    g.addColorStop(1, darken(body, 0.45));
+    ctx.fillStyle = g;
+    ctx.fill();
+    ctx.save();
+    ctx.clip();
+    ctx.strokeStyle = active ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.55)';
+    ctx.lineWidth = 0.07;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(pivotR * 0.9, -pivotR * 0.45);
+    ctx.lineTo(tx * 0.92, ty - 0.02 - pivotR * 0.1);
+    ctx.stroke();
+    ctx.restore();
+    // chrome pivot cap
+    const cap = ctx.createRadialGradient(-0.06, -0.06, 0.02, 0, 0, 0.26);
+    cap.addColorStop(0, '#ffffff');
+    cap.addColorStop(0.6, '#b9c2d0');
+    cap.addColorStop(1, '#6b7587');
+    ctx.fillStyle = cap;
+    ctx.strokeStyle = '#2a0a10';
+    ctx.lineWidth = 0.06;
+    ctx.beginPath();
+    ctx.arc(0, 0, 0.26, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = '#4a5366';
+    ctx.beginPath();
+    ctx.arc(0, 0, 0.08, 0, Math.PI * 2);
+    ctx.fill();
     ctx.restore();
   }
 

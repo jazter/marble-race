@@ -40,7 +40,7 @@ import {
   type FixTag,
 } from './build';
 import { SimCamera } from './camera';
-import { advanceState, computePoses, initState, type MechRuntime } from './mechanisms';
+import { advanceState, computePoses, initFlip, initState, type MechRuntime } from './mechanisms';
 import { MonsterSystem } from './monsters';
 import { PathProgress } from './progress';
 import { combinePhysics, type SwitchRuntime } from './switches';
@@ -243,6 +243,8 @@ class SimImpl implements Simulation {
         bodies: [],
         state: initState(def),
         poses: def.links.map(() => ({ x: 0, y: 0, angle: 0 })),
+        flip: initFlip(def),
+        touch: def.links.map(() => false),
       };
       computePoses(rt);
       def.links.forEach((link, li) => {
@@ -531,6 +533,7 @@ class SimImpl implements Simulation {
 
     // mechanisms: advance + kinematic targets
     for (const rt of this.mechs) {
+      this.scanFlipperTouch(rt);
       advanceState(rt, phys.mechanismSpeed, dt);
       const prev = rt.poses.map((p) => ({ x: p.x, y: p.y, angle: p.angle }));
       computePoses(rt);
@@ -621,6 +624,29 @@ class SimImpl implements Simulation {
       m.angle = b.getAngle();
       m.vx = v.x;
       m.vy = v.y;
+    }
+  }
+
+  /**
+   * Flipper trigger: true when a racing, un-held marble is touching the link (checked on the
+   * live contact list every step, so a marble resting on a flipper re-triggers it after the
+   * cooldown). The launch itself is just the kinematic surface velocity of the swing.
+   */
+  private scanFlipperTouch(rt: MechRuntime): void {
+    for (let i = 0; i < rt.bodies.length; i++) {
+      if (!rt.flip[i]) continue;
+      let hit = false;
+      for (let e = rt.bodies[i].getContactList(); e && !hit; e = e.next) {
+        const c = e.contact;
+        if (!c.isTouching() || !c.isEnabled()) continue;
+        const other = e.other;
+        const fa = c.getFixtureA();
+        const tag = (fa.getBody() === other ? fa : c.getFixtureB()).getUserData() as FixTag;
+        if (tag.k !== K_MARBLE) continue;
+        const m = this.marbles[tag.i];
+        if (m && m.status === 'racing' && m.heldBy === undefined) hit = true;
+      }
+      rt.touch[i] = hit;
     }
   }
 
@@ -843,7 +869,7 @@ class SimImpl implements Simulation {
   getMechanismPoses(): readonly MechanismPose[] {
     return this.mechs.map((rt) => ({
       id: rt.def.id,
-      links: rt.poses.map((p) => ({ x: p.x, y: p.y, angle: p.angle })),
+      links: rt.poses.map((p) => (p.active === undefined ? { x: p.x, y: p.y, angle: p.angle } : { x: p.x, y: p.y, angle: p.angle, active: p.active })),
       field: rt.field ? { x: rt.field.x, y: rt.field.y } : undefined,
     }));
   }
