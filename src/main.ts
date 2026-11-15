@@ -270,6 +270,52 @@ async function loadSavedMap(m: SavedMap): Promise<void> {
   }
 }
 
+/**
+ * "Revancha": same map and marbles, but a new race number changes the start kicks,
+ * nudges, monster decisions and who starts where, so the race plays out differently.
+ * Each candidate is validated (deterministic sim) so marbles are still guaranteed to finish.
+ */
+async function rematch(): Promise<void> {
+  if (!race || !raceConfig || loading || mode === 'generating') return;
+  loading = true;
+  hidePodium();
+  $('checking-title').textContent = 'Preparando revancha…';
+  $('checking').classList.add('show');
+  try {
+    await new Promise<void>((r) => requestAnimationFrame(() => setTimeout(r, 0)));
+    const base = raceConfig.race.raceSeed ?? 0;
+    const names = Object.keys(getAllCustomNames());
+    for (let k = 1; k <= 12; k++) {
+      const cfg = structuredClone(raceConfig);
+      cfg.race.raceSeed = base + k;
+      const roster = createRoster(cfg, race.seed, names);
+      let ok = false;
+      let first = race.firstFinishTime;
+      let fin = race.validationFinishers;
+      try {
+        const v = runValidation(race.map, roster, cfg);
+        ok = v.ok;
+        first = v.firstFinishTime;
+        fin = v.finishers;
+      } catch {
+        ok = false;
+      }
+      if (!ok) continue;
+      race = { ...race, roster, firstFinishTime: first, validationFinishers: fin };
+      raceConfig = cfg;
+      renderer.setConfig(cfg);
+      enterStaging();
+      showToast(`Revancha n.º ${cfg.race.raceSeed}: mismo mapa, carrera nueva`);
+      return;
+    }
+    openInfo('Revancha', 'No encontré una revancha en la que lleguen suficientes canicas. Prueba «Repetir carrera» o «Nuevo mapa».');
+  } finally {
+    $('checking').classList.remove('show');
+    $('checking-title').textContent = 'Comprobando mapa guardado…';
+    loading = false;
+  }
+}
+
 /** "Guardar mapa": ask for a name, then store the current map in localStorage. */
 function saveCurrentMap(): void {
   if (!race || !raceConfig || isDialogOpen()) return;
@@ -455,6 +501,7 @@ function showResult(): void {
     if (mode !== 'race') return;
     showPodium(result, race!.roster, raceConfig!.race.podiumSize, {
       onRepeat: enterStaging,
+      onRematch: () => void rematch(),
       onNew: () => {
         disposeRace();
         void generate(true);

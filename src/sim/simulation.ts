@@ -125,8 +125,10 @@ class SimImpl implements Simulation {
   constructor(map: MapDef, roster: MarbleProfile[], config: GameConfig) {
     this.map = map;
     this.config = config;
-    this.rng = new Rng(map.seed);
-    this.monsterRng = new Rng((map.seed ^ 0x6d6f6e73) >>> 0);
+    // raceSeed 0/undefined keeps the original race bit-identical; a rematch mixes it in.
+    const rs = config.race.raceSeed ? Math.imul(config.race.raceSeed >>> 0, 0x9e3779b1) >>> 0 : 0;
+    this.rng = new Rng((map.seed ^ rs) >>> 0);
+    this.monsterRng = new Rng((map.seed ^ 0x6d6f6e73 ^ rs) >>> 0);
     this.prog = new PathProgress(map.path);
     this.cam = new SimCamera(map, config, this.prog);
 

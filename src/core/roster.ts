@@ -500,7 +500,9 @@ export function createRoster(config: GameConfig, seed: number, preferredKeys: re
   const count = Math.max(0, Math.floor(config.marbles.count));
   const enabled = SKIN_ORDER.filter((t) => config.marbles.skins[t]);
   const entries = preferredKeys.length ? pickWithPreferred(enabled, count, preferredKeys) : skinCatalog(enabled, count);
-  const rng = new Rng((seed >>> 0) ^ 0x51ed270b);
+  // a rematch (race.raceSeed) also reshuffles who starts where; 0 keeps the original order
+  const rs = config.race.raceSeed ? Math.imul(config.race.raceSeed >>> 0, 0x85ebca6b) >>> 0 : 0;
+  const rng = new Rng(((seed >>> 0) ^ 0x51ed270b ^ rs) >>> 0);
   rng.shuffle(entries);
   return entries.map((e, i) => ({
     id: i,

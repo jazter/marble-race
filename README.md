@@ -16,7 +16,8 @@ Controles durante la carrera:
 |---|---|
 | Velocidad 0.3× – 8× | Cambia la velocidad de la simulación (por defecto 1×; la cuenta atrás siempre va a 1×) |
 | Pausa (barra espaciadora) | Pausa o reanuda |
-| ↺ Reiniciar | Repite exactamente la misma carrera (la simulación es determinista) |
+| ↺ Reiniciar / Repetir carrera | Repite exactamente la misma carrera (la simulación es determinista) |
+| 🔁 Revancha (en el podio) | Mismo mapa y mismas canicas, pero cambia el impulso de salida, el orden en la caja y las decisiones de los monstruos: la carrera sale distinta y se vuelve a validar. Una revancha guardada se reproduce igual |
 | 🗺️ Nuevo mapa | Genera otro mapa |
 | Vista previa | Zoom y desplazamiento con ratón o pantalla táctil |
 | ⭐ Guardar mapa | En la vista previa, en la preparación y en el podio: guarda el mapa con el nombre que elijas (máx. 30, en el navegador) |

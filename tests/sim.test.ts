@@ -376,3 +376,22 @@ describe('scroll camera', () => {
     sim.destroy();
   });
 });
+
+describe('rematch (race.raceSeed)', () => {
+  const run = (raceSeed?: number) => {
+    const cfg = sampleConfig(12);
+    if (raceSeed !== undefined) cfg.race.raceSeed = raceSeed;
+    const sim = createSimulation(sampleMap(12), sampleRoster(12), cfg);
+    while (!sim.isOver() && sim.time < 120) sim.step();
+    const r = sim.getResult();
+    sim.destroy();
+    return JSON.stringify(r.finishers);
+  };
+  it('raceSeed 0 / undefined replays the original race exactly', () => {
+    expect(run(0)).toBe(run(undefined));
+  });
+  it('a rematch is deterministic but plays out differently', () => {
+    expect(run(1)).toBe(run(1));
+    expect(run(1)).not.toBe(run(0));
+  });
+});

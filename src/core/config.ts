@@ -164,6 +164,12 @@ export interface GameConfig {
     /** Nudge marbles that have not moved for a while (deterministic). */
     unstuck: boolean;
     endMode: RaceEndMode;
+    /**
+     * Rematch number on the same map (0 = the original race). A different value changes
+     * the start kicks, unstuck nudges and monster decisions, so the race plays out
+     * differently while staying deterministic. Optional: older configs have none.
+     */
+    raceSeed?: number;
   };
 
   map: {
