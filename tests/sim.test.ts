@@ -419,3 +419,24 @@ describe('course outline containment', () => {
     sim.destroy();
   });
 });
+
+describe('timed switches', () => {
+  it('re-hits while active do not extend it, and it rests before it can fire again', () => {
+    const map = sampleMap(12);
+    const cfg = sampleConfig(12);
+    const sim = createSimulation(map, sampleRoster(12), cfg);
+    const on: number[] = [];
+    const off: number[] = [];
+    while (!sim.isOver() && sim.time < 60) {
+      sim.step();
+      for (const e of sim.drainEvents()) {
+        if (e.type !== 'switch' || e.switchId !== 'sw1') continue;
+        (e.active ? on : off).push(e.t);
+      }
+    }
+    sim.destroy();
+    const dur = map.switches.find((s) => s.id === 'sw1')!.duration;
+    for (let i = 0; i < off.length; i++) expect(off[i] - on[i]).toBeCloseTo(dur, 1); // never extended
+    for (let i = 1; i < on.length; i++) expect(on[i] - off[i - 1]).toBeGreaterThanOrEqual(4 - 1e-6); // rest
+  });
+});

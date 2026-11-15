@@ -223,7 +223,8 @@ export function fillLane(ctx: Ctx, lane: Lane, style: LaneStyle, variant: number
     }
     case 'miel': {
       const e = clamp(Math.min(room, c * 0.7), 0.8, 3.4);
-      for (let y = lane.ya, i = 0; y <= lane.yb - 1; y += sp0(3.2), i++) ledge(ctx, lane, first * (i % 2 === 0 ? 1 : -1), y, e, 12, 'slow');
+      // slow (honey) ledges need a real slope or marbles crawl to a stop on them
+      for (let y = lane.ya, i = 0; y <= lane.yb - 1; y += sp0(3.2), i++) ledge(ctx, lane, first * (i % 2 === 0 ? 1 : -1), y, e, 20, 'slow');
       break;
     }
     case 'helice': {

@@ -138,7 +138,15 @@ function buildTrap(ctx: Ctx, lane: Lane, t: GableTrap, variant: number): void {
       const radius = rng.range(0.9, 1.2);
       const reach = radius * 1.35;
       const sg = rng.sign();
-      const x = sg < 0 ? lane.xa + reach + 0.1 : lane.xb - reach - 0.1;
+      // never leave a thin wedge between the disc and a wall (a spinning saw pins marbles there):
+      // either a full passage on both sides, or the disc set right against the wall
+      const pass = passMin(ctx);
+      const x =
+        c >= 2 * reach + 2 * pass
+          ? lane.xa + c / 2 + sg * Math.min(c / 2 - reach - pass, 0.6)
+          : sg < 0
+            ? lane.xa + reach - 0.25
+            : lane.xb - reach + 0.25;
       const m: Mechanism = {
         id: nid(ctx, 'saw'),
         kind: 'saw',
@@ -283,10 +291,15 @@ function gableSplit(ctx: Ctx): void {
     { set: leftSet, xa: cx - half, xb: cx - DIV_HALF },
     { set: rightSet, xa: cx + DIV_HALF, xb: cx + half },
   ];
+  const w0 = ctx.walls.length;
   for (const ln of lanes) {
     const slot = (yb - ya) / ln.set.length;
-    ln.set.forEach((t, i) => buildTrap(ctx, { xa: ln.xa, xb: ln.xb, ya: ya + i * slot, yb: ya + (i + 1) * slot }, t, i));
+    // leave a gap between consecutive traps so the end of one never crowds the start of the next
+    const pad = Math.min(1.1, slot * 0.12);
+    // ...and keep traps off the roof eaves above and the merge funnel below
+    ln.set.forEach((t, i) => buildTrap(ctx, { xa: ln.xa, xb: ln.xb, ya: ya + i * slot + pad, yb: ya + (i + 1) * slot - pad }, t, i));
   }
+  removePinchCircles(ctx, w0, lanes.map((l) => ({ xa: l.xa, xb: l.xb, ya, yb })));
   pathTo(ctx, cx, yDiv1);
 
   // merge back into the corridor
@@ -297,3 +310,50 @@ function gableSplit(ctx: Ctx): void {
 
 void passMin;
 export { pinball, gableSplit };
+
+/**
+ * Safety pass for trap lanes: a bumper / peg that leaves only a marble-sized slot next to a
+ * ledge built in the same segment makes a pocket where marbles jam (seen in play: bumpers
+ * sitting on the low end of a honey ledge). Remove such circles.
+ */
+function removePinchCircles(ctx: Ctx, fromIndex: number, lanes: { xa: number; xb: number; ya: number; yb: number }[] = []): void {
+  const minGap = passMin(ctx);
+  const segs: { ax: number; ay: number; bx: number; by: number; half: number }[] = [];
+  for (let i = fromIndex; i < ctx.walls.length; i++) {
+    const sh = ctx.walls[i].shape;
+    if (sh.type !== 'polyline') continue;
+    for (let k = 0; k < sh.points.length - 1; k++) {
+      segs.push({ ax: sh.points[k].x, ay: sh.points[k].y, bx: sh.points[k + 1].x, by: sh.points[k + 1].y, half: sh.thickness / 2 });
+    }
+  }
+  const keep: typeof ctx.walls = ctx.walls.slice(0, fromIndex);
+  for (let i = fromIndex; i < ctx.walls.length; i++) {
+    const w = ctx.walls[i];
+    if (w.shape.type === 'circle' && w.reaction !== 'kill') {
+      const { center, radius } = w.shape;
+      let pinch = false;
+      for (const g of segs) {
+        const vx = g.bx - g.ax;
+        const vy = g.by - g.ay;
+        const l2 = vx * vx + vy * vy || 1e-9;
+        const u = clamp(((center.x - g.ax) * vx + (center.y - g.ay) * vy) / l2, 0, 1);
+        const gap = Math.hypot(center.x - (g.ax + vx * u), center.y - (g.ay + vy * u)) - radius - g.half;
+        if (gap > 0.05 && gap < minGap) {
+          pinch = true;
+          break;
+        }
+      }
+      // ...and against the lane's side walls: a slot narrower than a grown marble jams it
+      for (const ln of lanes) {
+        if (pinch || center.y < ln.ya - 1 || center.y > ln.yb + 1 || center.x < ln.xa || center.x > ln.xb) continue;
+        for (const gap of [center.x - radius - ln.xa, ln.xb - center.x - radius]) {
+          if (gap > 0.05 && gap < minGap) pinch = true;
+        }
+      }
+      if (pinch) continue;
+    }
+    keep.push(w);
+  }
+  ctx.walls.length = 0;
+  ctx.walls.push(...keep);
+}

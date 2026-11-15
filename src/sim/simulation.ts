@@ -7,7 +7,7 @@
  */
 import { Circle, Vec2, World, type Body, type Contact, type Fixture } from 'planck';
 import { SIM_DT, type EffectType, type GameConfig, type WallReaction } from '../core/config';
-import { cross, pointInPolygon } from '../core/math';
+import { cross, pointAtLength, pointInPolygon } from '../core/math';
 import { Rng } from '../core/rng';
 import type { MapDef, MarbleProfile } from '../core/types';
 import type {
@@ -43,7 +43,7 @@ import { SimCamera } from './camera';
 import { advanceState, computePoses, initFlip, initState, type MechRuntime } from './mechanisms';
 import { MonsterSystem } from './monsters';
 import { PathProgress } from './progress';
-import { combinePhysics, type SwitchRuntime } from './switches';
+import { combinePhysics, type SwitchRuntime, SWITCH_REST } from './switches';
 
 /** Each marble can trigger flippers at most this many times per race. */
 const MAX_FLIPS_PER_MARBLE = 3;
@@ -493,11 +493,13 @@ class SimImpl implements Simulation {
       s.hits++;
       this.emit({ t: this.time, type: 'switch', switchId: def.id, active: true });
     } else {
-      const was = s.active;
+      // While active, re-hits don't extend it (marbles piling on a button used to keep e.g.
+      // a gravity tilt on for tens of seconds); after it ends it rests SWITCH_REST seconds.
+      if (s.active || (s.rest ?? 0) > 1e-9) return;
       s.active = true;
       s.remaining = def.duration;
       s.hits++;
-      if (!was) this.emit({ t: this.time, type: 'switch', switchId: def.id, active: true });
+      this.emit({ t: this.time, type: 'switch', switchId: def.id, active: true });
     }
     if (def.action.type === 'openGate' && def.action.gateId) this.openGate(def.action.gateId);
   }
@@ -722,11 +724,16 @@ class SimImpl implements Simulation {
 
   private updateSwitchTimers(): void {
     for (const s of this.switches) {
-      if (!s.active || s.def.mode !== 'timed') continue;
+      if (s.def.mode !== 'timed') continue;
+      if (!s.active) {
+        if (s.rest) s.rest = Math.max(0, s.rest - SIM_DT);
+        continue;
+      }
       s.remaining -= SIM_DT;
       if (s.remaining <= 1e-9) {
         s.remaining = 0;
         s.active = false;
+        s.rest = SWITCH_REST;
         this.emit({ t: this.time, type: 'switch', switchId: s.def.id, active: false });
       }
     }
@@ -823,9 +830,23 @@ class SimImpl implements Simulation {
       if (Math.hypot(m.x - h[0], m.y - h[1]) >= 0.25) continue;
       if (this.time - this.lastKick[m.id] < 4) continue;
       const side = this.rng.range(-0.8, 0.8);
-      const speed = this.rng.range(4, 6);
+      let speed = this.rng.range(4, 6);
       let kx = ux + -uy * side;
       let ky = uy + ux * side;
+      // A marble kicked recently that is stuck again fell back into the same pocket: kick it
+      // harder and toward the course centre-line instead (escapes corners and wedges).
+      const again = this.time - this.lastKick[m.id] < 12;
+      if (again) {
+        const c = pointAtLength(this.map.path, this.prog.cum, m.progress);
+        const dx = c.x - m.x;
+        const dy = c.y - m.y;
+        const d = Math.hypot(dx, dy);
+        if (d > 0.5) {
+          kx = dx / d + ux * 0.6;
+          ky = dy / d + uy * 0.6;
+        }
+        speed *= 1.4;
+      }
       const kl = Math.hypot(kx, ky) || 1;
       kx = (kx / kl) * speed;
       ky = (ky / kl) * speed;

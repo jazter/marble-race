@@ -9,7 +9,12 @@ export interface SwitchRuntime {
   active: boolean;
   remaining: number;
   hits: number;
+  /** Seconds left before a timed switch can be triggered again after it switched off. */
+  rest?: number;
 }
+
+/** A timed switch can't be re-triggered for this long after it switches off. */
+export const SWITCH_REST = 4;
 
 export function combinePhysics(config: GameConfig, switches: readonly SwitchRuntime[]): PhysicsState {
   let gScale = 1;

@@ -457,8 +457,11 @@ function placeOnRamp(ctx: Ctx, rp: Ramp, t: number, type: SwitchActionType, gate
       value = rng.range(1.6, 2);
       break;
     case 'tiltGravity':
-      value = Math.sign(rp.b.x - rp.a.x) * rng.range(15, 30); // tilts downhill along the host ramp (uphill tilt would trap marbles on the button)
+      // tilts downhill along the host ramp (uphill tilt would trap marbles on the button);
+      // kept gentle and short because ramps sloping the other way turn uphill while it lasts
+      value = Math.sign(rp.b.x - rp.a.x) * rng.range(10, 18);
       rng.next();
+      duration = Math.min(duration, 4);
       break;
     case 'reverseGravity':
       value = -rng.range(0.4, 0.6);

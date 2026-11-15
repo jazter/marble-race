@@ -133,7 +133,7 @@ export interface Switch {
   halfHeight: number;
   angle: number;
   action: SwitchAction;
-  /** 'timed': active for `duration` s then reverts (re-trigger restarts timer).
+  /** 'timed': active for `duration` s then reverts; hits while active don't extend it and it rests 4 s after switching off.
    *  'once': first hit applies permanently. */
   mode: 'timed' | 'once';
   duration: number;
