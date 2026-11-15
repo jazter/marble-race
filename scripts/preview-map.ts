@@ -56,9 +56,12 @@ for (const m of map.mechanisms) {
   let pos = m.pivot; let ang = 0;
   m.links.forEach((l, i) => {
     const mo = l.motion;
-    const rel = mo.type === 'rotate' ? mo.phase : mo.center + mo.amplitude * Math.sin(mo.phase);
+    const rel = mo.type === 'rotate' ? mo.phase : mo.type === 'flipper' ? mo.rest : mo.center + mo.amplitude * Math.sin(mo.phase);
     ang += rel;
-    o += l.shapes.map((s) => shapeSvg(s, pos, ang, fill)).join('');
+    if (mo.type === 'flipper') {
+      o += l.shapes.map((s) => shapeSvg(s, pos, mo.up, '#ff9f1c')).join('').replace(/fill="#ff9f1c"/g, 'fill="#ff9f1c" fill-opacity=".25"');
+      o += l.shapes.map((s) => shapeSvg(s, pos, ang, '#ff9f1c')).join('') + `<circle cx="${X(pos.x)}" cy="${Y(pos.y)}" r="4" fill="#fff"/>`;
+    } else o += l.shapes.map((s) => shapeSvg(s, pos, ang, fill)).join('');
     if (l.tip) { const t = rotate(l.tip, ang); pos = { x: pos.x + t.x, y: pos.y + t.y }; }
     if (i === m.links.length - 1 && m.fieldRadius && m.fieldAnchor) {
       const a = rotate(m.fieldAnchor, ang);
@@ -108,6 +111,25 @@ writeFileSync(base + '.svg', svg);
 console.log('segments', map.segments.map((s) => `${s.type}[${s.from.toFixed(0)}-${s.to.toFixed(0)}]`).join(' '));
 console.log('size', Wd, Hd, 'walls', map.walls.length, 'mechs', map.mechanisms.length, 'switches', map.switches.length, 'zones', map.zones.length);
 const browser = await chromium.launch();
+if (process.env.CROP) {
+  // CROP=pinball -> one PNG of the first segment of that type
+  const sg = map.segments.find((x) => x.type === process.env.CROP);
+  if (sg) {
+    const cum = [0];
+    for (let i = 1; i < map.path.length; i++) cum.push(cum[i - 1] + Math.hypot(map.path[i].x - map.path[i - 1].x, map.path[i].y - map.path[i - 1].y));
+    const ps = map.path.filter((_, i) => cum[i] >= sg.from - 1 && cum[i] <= sg.to + 1);
+    const x0 = Math.max(0, Math.floor((Math.min(...ps.map((p) => p.x)) - 14 - b.minX) * S));
+    const y0 = Math.max(0, Math.floor((Math.min(...ps.map((p) => p.y)) - 4 - b.minY) * S));
+    const x1 = Math.min(Wd, Math.ceil((Math.max(...ps.map((p) => p.x)) + 14 - b.minX) * S));
+    const y1 = Math.min(Hd, Math.ceil((Math.max(...ps.map((p) => p.y)) + 4 - b.minY) * S));
+    const pg = await browser.newPage({ viewport: { width: Wd, height: Hd }, deviceScaleFactor: 1 });
+    await pg.setContent(`<body style="margin:0;background:#000">${svg}</body>`);
+    await pg.screenshot({ path: `${base}_${process.env.CROP}.png`, clip: { x: x0, y: y0, width: x1 - x0, height: y1 - y0 }, fullPage: true });
+    console.log(`${base}_${process.env.CROP}.png`);
+  }
+  await browser.close();
+  process.exit(0);
+}
 const tileH = 1500;
 const tiles = Math.ceil(Hd / tileH);
 const page = await browser.newPage({ viewport: { width: Wd, height: Math.min(tileH, Hd) }, deviceScaleFactor: 1 });

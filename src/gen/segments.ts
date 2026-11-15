@@ -25,8 +25,10 @@ import {
   sawShapes,
   sweeperXs,
   kindEnabled,
+  makeFlipper,
 } from './util';
 import { galton, galtonAvailable, lanes, lanesAvailable } from './boards';
+import { gableAvailable, gableSplit, pinball, pinballAvailable } from './pinball';
 
 export type SegmentType =
   | 'zigzag'
@@ -42,7 +44,9 @@ export type SegmentType =
   | 'funnelGate'
   | 'rotorChamber'
   | 'galton'
-  | 'lanes';
+  | 'lanes'
+  | 'pinball'
+  | 'gableSplit';
 
 const finishSeg = (ctx: Ctx, yEnd: number): void => {
   extend(ctx, yEnd);
@@ -53,7 +57,18 @@ const lerpInt = (ctx: Ctx, lo: number, hi: number): number => clamp(Math.round(l
 
 /* ----------------------------------------------------------------- zigzag */
 
-function zigzagRamps(ctx: Ctx, n: number): Ramp[] {
+/** Flipper lying on the head of a ramp (next to the wall it hangs from): kicks marbles that fall on it back up. */
+function rampFlipper(ctx: Ctx, rp: Ramp): void {
+  const L = dist(rp.a, rp.b);
+  const d = { x: (rp.b.x - rp.a.x) / L, y: (rp.b.y - rp.a.y) / L };
+  const tilt = Math.atan2(d.y, Math.abs(d.x));
+  const up = d.x > 0 ? { x: d.y, y: -d.x } : { x: -d.y, y: d.x };
+  const off = rp.thick / 2 + 0.22 + 0.03;
+  const pivot = { x: rp.a.x + d.x * 0.45 + up.x * off, y: rp.a.y + d.y * 0.45 + up.y * off };
+  makeFlipper(ctx, pivot, { L: 1.7, dir: d.x > 0 ? 1 : -1, tilt, upSpeed: 4 });
+}
+
+function zigzagRamps(ctx: Ctx, n: number, flippers = false): Ramp[] {
   const { cx, hw, rng } = ctx;
   const gap = Math.max(3, 4 * ctx.R) + 0.6;
   const sep = Math.max(3.5, 5 * ctx.R);
@@ -66,7 +81,9 @@ function zigzagRamps(ctx: Ctx, n: number): Ramp[] {
     const freeX = side < 0 ? cx + hw - gap : cx - hw + gap;
     const a = { x: attachX, y };
     const b = { x: freeX, y: y + Math.abs(freeX - attachX) * Math.tan(s) };
-    out.push(addRamp(ctx, a, b));
+    const rp = addRamp(ctx, a, b);
+    out.push(rp);
+    if (flippers && rng.bool(0.25) && kindEnabled(ctx, 'flipper')) rampFlipper(ctx, rp);
     y = b.y + sep;
     side = -side;
   }
@@ -76,7 +93,7 @@ function zigzagRamps(ctx: Ctx, n: number): Ramp[] {
 }
 
 function zigzag(ctx: Ctx): void {
-  zigzagRamps(ctx, ctx.rng.int(4, 6));
+  zigzagRamps(ctx, ctx.rng.int(4, 6), true);
 }
 
 /* ----------------------------------------------------------------- funnel */
@@ -674,6 +691,8 @@ export const LIBRARY: SegmentDef[] = [
   },
   { type: 'galton', weight: 1.2, run: galton, available: galtonAvailable, ownSwitch: true },
   { type: 'lanes', weight: 1.2, run: lanes, available: lanesAvailable, ownSwitch: true },
+  { type: 'pinball', weight: 1, run: pinball, available: pinballAvailable, ownSwitch: true },
+  { type: 'gableSplit', weight: 1, run: gableSplit, available: gableAvailable, ownSwitch: true },
   { type: 'funnelGate', weight: 1, run: funnelGate, available: regroupAvailable, regroup: true },
   { type: 'rotorChamber', weight: 1, run: rotorChamber, available: regroupAvailable, regroup: true },
 ];

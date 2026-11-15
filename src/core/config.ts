@@ -28,7 +28,8 @@ export type MechanismKind =
   | 'arm2' // 2-link arm: link 1 rotates around a fixed pivot, link 2 rotates at the tip of link 1
   | 'saw' // spinning toothed disc
   | 'triangle' // spinning triangle
-  | 'hammer'; // pendulum-like bar oscillating around 1 pivot
+  | 'hammer' // pendulum-like bar oscillating around 1 pivot
+  | 'flipper'; // pinball flipper: swings up when a marble touches it, throwing it upward
 
 export type SkinType =
   | 'solid'
@@ -229,7 +230,7 @@ export function defaultConfig(): GameConfig {
       launchStrength: 12,
     },
     objects: {
-      kinds: { propeller: true, arm2: true, saw: true, triangle: true, hammer: true },
+      kinds: { propeller: true, arm2: true, saw: true, triangle: true, hammer: true, flipper: true },
       effects: { grow: true, shrink: true, destroy: true, attract: true, repel: true },
       density: 0.5,
       speed: 1,
@@ -280,7 +281,7 @@ export function defaultConfig(): GameConfig {
       endMode: 'podium',
     },
     map: {
-      segments: 8,
+      segments: 10,
       width: 16,
       difficulty: 0.5,
       maxAttempts: 25,

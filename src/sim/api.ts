@@ -47,6 +47,8 @@ export interface LinkPose {
   x: number; // world position of the link's pivot
   y: number;
   angle: number; // world angle of the link (radians)
+  /** Flipper links only: true while swinging up (renderer flash / thwack). */
+  active?: boolean;
 }
 
 export interface MechanismPose {

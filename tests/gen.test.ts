@@ -5,6 +5,7 @@ import { generateMap } from '../src/gen';
 import type { MapDef, Monster, Vec } from '../src/core/types';
 import { analyzeAlignment, segmentYRanges } from '../src/gen/analysis';
 import { laneLog } from '../src/gen/boards';
+import { gableLog } from '../src/gen/pinball';
 
 const cfgWith = (f: (c: GameConfig) => void): GameConfig => {
   const c = defaultConfig();
@@ -126,7 +127,7 @@ describe('generator', () => {
   it('never uses disabled kinds, effects or switches', () => {
     for (let seed = 1; seed <= 15; seed++) {
       const c = cfgWith((x) => {
-        x.objects.kinds = { propeller: true, arm2: false, saw: false, triangle: true, hammer: false };
+        x.objects.kinds = { propeller: true, arm2: false, saw: false, triangle: true, hammer: false, flipper: false };
         x.objects.effects = { grow: true, shrink: false, destroy: false, attract: false, repel: true };
         x.objects.effectChance = 1;
         x.switches.enabled = false;
@@ -598,6 +599,121 @@ describe('course outline', () => {
         for (const p of m.path.slice(1, -1)) expect(pointInPolygon(p, o)).toBe(true);
         const mid = { x: (m.finish.a.x + m.finish.b.x) / 2, y: (m.finish.a.y + m.finish.b.y) / 2 };
         expect(pointInPolygon(mid, o)).toBe(true);
+      }
+    }
+  });
+});
+
+describe('pinball and gableSplit segments', () => {
+  const cfg10 = (f?: (c: GameConfig) => void): GameConfig => cfgWith((c) => ((c.map.segments = 10), f?.(c)));
+
+  it('places one of each with >= 8 segments (never first, not on regroups)', () => {
+    for (const n of [8, 10, 12]) {
+      for (let seed = 1; seed <= 12; seed++) {
+        const m = generateMap(cfgWith((c) => (c.map.segments = n)), seed);
+        const types = baseTypes(m);
+        expect(types.filter((t) => t === 'pinball').length).toBe(1);
+        expect(types.filter((t) => t === 'gableSplit').length).toBe(1);
+        expect(types[0]).not.toBe('pinball');
+        expect(types[0]).not.toBe('gableSplit');
+      }
+    }
+  });
+
+  it('is absent below 8 segments and pinball is absent without flippers', () => {
+    const m = generateMap(cfgWith((c) => (c.map.segments = 6)), 3);
+    expect(baseTypes(m)).not.toContain('pinball');
+    expect(baseTypes(m)).not.toContain('gableSplit');
+    for (let seed = 1; seed <= 8; seed++) {
+      const g = generateMap(cfg10((c) => (c.objects.kinds.flipper = false)), seed);
+      expect(baseTypes(g)).not.toContain('pinball');
+      expect(baseTypes(g)).toContain('gableSplit');
+      expect(g.mechanisms.some((x) => x.kind === 'flipper')).toBe(false);
+    }
+  });
+
+  it('builds sane flippers: two per pinball, pivot at one end, rest/up apart, speeds > 0', () => {
+    for (let seed = 1; seed <= 10; seed++) {
+      const m = generateMap(cfg10(), seed);
+      const rng = segmentYRanges(m).find((s) => s.type === 'pinball') as { y0: number; y1: number };
+      const fl = m.mechanisms.filter((x) => x.kind === 'flipper');
+      const inSeg = fl.filter((x) => x.pivot.y > rng.y0 && x.pivot.y < rng.y1);
+      expect(inSeg.length).toBe(2);
+      for (const f of fl) {
+        expect(f.links.length).toBe(1);
+        expect(f.effect).toBeNull();
+        const mo = f.links[0].motion;
+        if (mo.type !== 'flipper') throw new Error('not a flipper');
+        expect(Math.abs(mo.up - mo.rest)).toBeGreaterThan(0.5);
+        expect(Math.abs(mo.up - mo.rest)).toBeLessThan(1.6);
+        expect(mo.upSpeed).toBeGreaterThan(0);
+        expect(mo.downSpeed).toBeGreaterThan(0);
+        expect(mo.hold).toBeGreaterThanOrEqual(0);
+        expect(mo.cooldown).toBeGreaterThan(0);
+        for (const sh of f.links[0].shapes) if (sh.type === 'polygon') expect(sh.points.length).toBeLessThanOrEqual(8);
+      }
+      // drain between the flipper pivots is wide enough for the biggest marble
+      const [a, b] = inSeg.sort((p, q) => p.pivot.x - q.pivot.x);
+      expect(b.pivot.x - a.pivot.x).toBeGreaterThan(3 * 0.9 + 3.5);
+    }
+  });
+
+  it('gives the two roof lanes different trap sets', () => {
+    for (let seed = 1; seed <= 15; seed++) {
+      generateMap(cfg10(), seed);
+      expect(gableLog.length).toBe(2);
+      const [l, r] = gableLog;
+      expect(l.length).toBeGreaterThanOrEqual(2);
+      expect(r.length).toBeGreaterThanOrEqual(2);
+      expect([...l].sort().join()).not.toBe([...r].sort().join());
+      expect(l.some((t) => r.includes(t))).toBe(false);
+    }
+  });
+
+  it('respects disabled kinds / reactions in the lanes', () => {
+    for (let seed = 1; seed <= 8; seed++) {
+      const c = cfg10((x) => {
+        x.objects.kinds = { propeller: false, arm2: false, saw: false, triangle: false, hammer: false, flipper: false };
+        x.walls.special = { bounce: true, slow: false, kill: false, launch: false };
+        x.objects.zones = false;
+      });
+      const m = generateMap(c, seed);
+      for (const w of m.walls) expect(w.reaction === 'kill' || w.reaction === 'slow' || w.reaction === 'launch').toBe(false);
+      for (const mech of m.mechanisms) expect(mech.id.startsWith('regroup')).toBe(true);
+      expect(gableLog.flat().every((t) => ['impulso', 'rebote', 'clavos', 'escalones'].includes(t))).toBe(true);
+    }
+  });
+
+  it('is deterministic, keeps switches / monsters out and rotates flipper angles with gravity', () => {
+    const c = cfg10((x) => ((x.switches.frequency = 1), (x.monsters.count = 8)));
+    expect(JSON.stringify(generateMap(c, 9))).toBe(JSON.stringify(generateMap(c, 9)));
+    for (let seed = 1; seed <= 8; seed++) {
+      const m = generateMap(c, seed);
+      for (const r of segmentYRanges(m).filter((s) => s.type === 'pinball' || s.type === 'gableSplit')) {
+        for (const sw of m.switches) expect(sw.position.y < r.y0 || sw.position.y > r.y1).toBe(true);
+        for (const mo of m.monsters ?? []) for (const p of monsterPoints(mo)) expect(p.y < r.y0 || p.y > r.y1).toBe(true);
+      }
+    }
+    const a = generateMap(cfg10(), 4);
+    const b = generateMap(cfg10((x) => (x.physics.gravityAngle = 35)), 4);
+    const fa = a.mechanisms.filter((x) => x.kind === 'flipper')[0].links[0].motion;
+    const fb = b.mechanisms.filter((x) => x.kind === 'flipper')[0].links[0].motion;
+    if (fa.type !== 'flipper' || fb.type !== 'flipper') throw new Error('x');
+    expect(fb.rest - fa.rest).toBeCloseTo((-35 * Math.PI) / 180, 6);
+    expect(fb.up - fa.up).toBeCloseTo((-35 * Math.PI) / 180, 6);
+  });
+
+  it('keeps their outer walls solid with kill / mixed boundaries', () => {
+    for (const bd of ['kill', 'mixed'] as const) {
+      for (let seed = 1; seed <= 6; seed++) {
+        const m = generateMap(cfg10((x) => (x.walls.boundary = bd)), seed);
+        for (const r of segmentYRanges(m).filter((s) => s.type === 'pinball' || s.type === 'gableSplit')) {
+          for (const w of m.walls) {
+            if (!/^b\d+$/.test(w.id) || w.shape.type !== 'polyline' || w.reaction === 'solid') continue;
+            const ys = w.shape.points.map((p) => p.y);
+            expect(Math.max(...ys) <= r.y0 + 3 || Math.min(...ys) >= r.y1 - 8).toBe(true);
+          }
+        }
       }
     }
   });

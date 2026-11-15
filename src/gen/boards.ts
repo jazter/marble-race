@@ -6,7 +6,7 @@ import { DEG, clamp } from '../core/math';
 import type { Mechanism, Vec } from '../core/types';
 import { type Ctx, BH, mechClearance, addWall, applyEffect, extend, innerHalf, kindEnabled, nid, pathTo, propellerShapes } from './util';
 
-const finishSeg = (ctx: Ctx, yEnd: number): void => {
+export const finishSeg = (ctx: Ctx, yEnd: number): void => {
   extend(ctx, yEnd);
   pathTo(ctx, ctx.cx, yEnd);
 };
@@ -20,7 +20,7 @@ const gapRadius = (ctx: Ctx): number => ctx.r * Math.min(ctx.cfg.marbles.maxScal
  * Two ramps closing the whole corridor to a neck `O` wide centred on `nx` (solid, so the
  * flow stays predictable). Returns the y where the straight neck ends.
  */
-function neckFunnel(ctx: Ctx, top: number, nx: number, O: number, tanA: number, neckLen: number): number {
+export function neckFunnel(ctx: Ctx, top: number, nx: number, O: number, tanA: number, neckLen: number): number {
   const { cx, hw } = ctx;
   const xl = cx - hw - 0.2;
   const xr = cx + hw + 0.2;
@@ -36,7 +36,7 @@ function neckFunnel(ctx: Ctx, top: number, nx: number, O: number, tanA: number, 
 }
 
 /** Thin vertical divider with a pointed top (so marbles never perch on it). Convex pentagon. */
-function addSlat(ctx: Ctx, x: number, yTop: number, yBot: number, half: number, cap: number): void {
+export function addSlat(ctx: Ctx, x: number, yTop: number, yBot: number, half: number, cap: number): void {
   addWall(
     ctx,
     {
@@ -126,12 +126,12 @@ function galton(ctx: Ctx): void {
 
 /* ------------------------------------------------------------------- lanes */
 
-const DIV_HALF = 0.12;
+export const DIV_HALF = 0.12;
 
 /** Smallest clear lane width: 2.8 m and 3.2 R for the biggest marble. */
-const laneMin = (ctx: Ctx): number => Math.max(2.8, 3.2 * ctx.R);
+export const laneMin = (ctx: Ctx): number => Math.max(2.8, 3.2 * ctx.R);
 /** Passage that must stay free next to any lane obstacle. */
-const passMin = (ctx: Ctx): number => Math.max(2.0, 2 * ctx.R + 0.4);
+export const passMin = (ctx: Ctx): number => Math.max(2.0, 2 * ctx.R + 0.4);
 
 export function lanesMax(ctx: Ctx): number {
   const span = 2 * innerHalf(ctx);
@@ -145,7 +145,7 @@ export const laneLog: LaneStyle[][] = [];
 
 export type LaneStyle = 'rapido' | 'clavos' | 'escalones' | 'miel' | 'rebote' | 'helice';
 
-interface Lane {
+export interface Lane {
   /** inner faces */
   xa: number;
   xb: number;
@@ -154,7 +154,7 @@ interface Lane {
   yb: number;
 }
 
-function ledge(ctx: Ctx, lane: Lane, side: number, y: number, e: number, deg: number, reaction: 'solid' | 'launch' | 'slow'): void {
+export function ledge(ctx: Ctx, lane: Lane, side: number, y: number, e: number, deg: number, reaction: 'solid' | 'launch' | 'slow'): void {
   const face = side < 0 ? lane.xa : lane.xb;
   e = Math.max(0.3, e - 0.2); // the 0.4 thick ledge sticks out half its thickness past the tip
   const tipX = face - side * e;
@@ -175,7 +175,7 @@ function nub(ctx: Ctx, lane: Lane, side: number, y: number, rad: number, bumper:
   else addWall(ctx, { type: 'circle', center: c, radius: rad }, 'peg', { surface: true });
 }
 
-function fillLane(ctx: Ctx, lane: Lane, style: LaneStyle, variant: number): void {
+export function fillLane(ctx: Ctx, lane: Lane, style: LaneStyle, variant: number): void {
   const c = lane.xb - lane.xa;
   const room = c - passMin(ctx); // how far an obstacle may stick into the lane
   const sp = variant > 0 ? 0.8 : 1; // duplicate styles: denser

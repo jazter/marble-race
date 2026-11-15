@@ -22,6 +22,8 @@ export const ARENA_KINDS: ReadonlySet<MonsterKind> = new Set<MonsterKind>(['octo
 const SPIDER_TAIL = 11;
 
 export interface SegRec {
+  /** spiders placed here must stop above this y (the next segment is a protected board / table) */
+  cap?: number;
   type: string;
   y0: number;
   y1: number;
@@ -182,12 +184,28 @@ export function makeWorld(ctx: Ctx, walls: Wall[], gates: Gate[], mechs: Mechani
 /* -------------------------------------------------------------- arenas */
 
 /** Straight open stretch with an octopus in the middle. Uses no Rng draws of the course. */
-export function buildOctopusArena(ctx: Ctx, rng: Rng, id: string): { rec: SegRec; monster: Monster } {
+export function buildOctopusArena(ctx: Ctx, rng: Rng, id: string, centring = false): { rec: SegRec; monster: Monster } {
   const y0 = ctx.y;
+  if (centring) {
+    // V funnel feeding the stream to the middle, so tentacles meet marbles that left a ramp gap hugging a wall
+    const O = Math.max(3.2, 5 * ctx.R) + 0.5;
+    const top = y0 + 0.5;
+    const xl = ctx.cx - ctx.hw - 0.2;
+    const xr = ctx.cx + ctx.hw + 0.2;
+    const tan = Math.tan(38 * DEG);
+    const yl = top + (ctx.cx - O / 2 - xl) * tan;
+    const yr = top + (xr - (ctx.cx + O / 2)) * tan;
+    const neck = Math.max(yl, yr) + 2;
+    addWall(ctx, { type: 'polyline', thickness: 0.4, points: [{ x: xl, y: top }, { x: ctx.cx - O / 2, y: yl }, { x: ctx.cx - O / 2, y: neck }] }, 'ramp', { surface: true, dir: { x: ctx.cx - O / 2 - xl, y: yl - top } });
+    addWall(ctx, { type: 'polyline', thickness: 0.4, points: [{ x: xr, y: top }, { x: ctx.cx + O / 2, y: yr }, { x: ctx.cx + O / 2, y: neck }] }, 'ramp', { surface: true, dir: { x: ctx.cx + O / 2 - xr, y: yr - top } });
+    extend(ctx, neck + 0.5);
+    pathTo(ctx, ctx.cx, ctx.y);
+  }
+  const yTop = ctx.y;
   const maxBody = Math.min(1.5, innerHalf(ctx) - Math.max(3, 4 * ctx.R));
   const bodyRadius = Math.max(1.2, Math.min(rng.range(1.2, 1.5), maxBody));
   const cx = ctx.cx;
-  const roofY = y0 + 3.2;
+  const roofY = yTop + 3.2;
   const centerY = roofY + 1.0 + bodyRadius;
   const span = bodyRadius + 0.9;
   // little "hat" so marbles never rest on top of the head
@@ -290,6 +308,7 @@ function placeSpider(world: World, rec: SegRec, rng: Rng, id: string, k = 1): Mo
       let t = 0;
       while (t < 9.5 && world.clear({ x, y: y + t + 0.2 }) >= stop) t += 0.2;
       if (t >= 9.5 || t < restLength + 1.5) continue;
+      if (rec.cap !== undefined && y + t + 0.2 > rec.cap) continue;
       // the blocker must be a ramp surface (not a peg / rotor)
       if (world.rampClear({ x, y: y + t + 0.2 }) > stop + 0.15) continue;
       cands.push({ p, len: t });
@@ -427,10 +446,17 @@ export function groupCount(ctx: Ctx, rng: Rng): number {
  */
 export function placeMonsters(ctx: Ctx, rng: Rng, kinds: MonsterKind[], recs: SegRec[], fixed: Monster[], world: World): Monster[] {
   const out: Monster[] = [...fixed];
-  const free = recs.filter((r) => !r.regroup && !r.arena && r.type !== 'start' && r.type !== 'finish');
+  const free = recs.filter((r) => !r.regroup && !r.arena && r.type !== 'start' && r.type !== 'finish' && r.type !== 'pinball' && r.type !== 'gableSplit');
   // galton / lanes have no free horizontal line (fish) and no room for the others except the merge funnel at their end: a spider may hang there
   const isBoard = (r: SegRec): boolean => r.type === 'galton' || r.type === 'lanes';
-  const spiderZone = (r: SegRec): SegRec => (isBoard(r) ? { ...r, y0: Math.max(r.y0, r.y1 - SPIDER_TAIL) } : r);
+  const protectedNext = (r: SegRec): boolean => {
+    const n = recs[recs.indexOf(r) + 1];
+    return !!n && (n.type === 'galton' || n.type === 'lanes' || n.type === 'pinball' || n.type === 'gableSplit');
+  };
+  const spiderZone = (r: SegRec): SegRec => {
+    const z = isBoard(r) ? { ...r, y0: Math.max(r.y0, r.y1 - SPIDER_TAIL) } : r;
+    return protectedNext(r) ? { ...z, cap: r.y1 } : z;
+  };
   const used = new Set<SegRec>();
   const flexible = kinds.filter((k) => k === 'spider' || k === 'fish');
   let nid = 100;

@@ -3,12 +3,13 @@
  * and rotates everything at the end to match the configured gravity direction.
  * Deterministic for (config, seed); only uses the seeded Rng.
  */
-import type { GameConfig, WallReaction } from '../core/config';
+import type { GameConfig, MonsterKind, WallReaction } from '../core/config';
 import { DEG, cumulativeLengths, dirFromAngle, rotate } from '../core/math';
 import { Rng } from '../core/rng';
 import type { MapDef, Monster, StaticShape, Vec } from '../core/types';
 import { LIBRARY, maybeSwitch, type SegmentDef } from './segments';
 import { galtonAvailable, laneLog, lanesAvailable } from './boards';
+import { gableAvailable, gableLog, pinballAvailable } from './pinball';
 import {
   MONSTER_SEED_SALT,
   type SegRec,
@@ -116,11 +117,20 @@ function buildFinish(ctx: Ctx): MapDef['finish'] {
 }
 
 /** Segment types that reset the "gap side" tracking: something in them redirects the marbles. */
-const REDIRECTING = new Set(['funnel', 'pegs', 'propellers', 'arms', 'saws', 'triangles', 'hammers', 'funnelGate', 'rotorChamber', 'galton', 'lanes']);
+/** Segments whose exit stream is spread across the width or centred (octopus tentacles then catch many). */
+const OCTOPUS_FEEDERS = new Set(['funnel', 'pegs', 'funnelGate', 'galton', 'lanes', 'gableSplit', 'pinball', 'triangles', 'propellers']);
+/** Feeders that already hand over a centred stream: no extra funnel needed. */
+const OCTOPUS_CENTRED = new Set(['funnel', 'funnelGate']);
+function octopusFeedOk(type: string, lastGap: number): boolean {
+  return OCTOPUS_FEEDERS.has(type) && lastGap === 0;
+}
+const REDIRECTING = new Set(['funnel', 'pegs', 'propellers', 'arms', 'saws', 'triangles', 'hammers', 'funnelGate', 'rotorChamber', 'galton', 'lanes', 'pinball', 'gableSplit']);
 const SPECIAL = new Set(['galton', 'lanes']);
+/** Only placed by the planner (never picked at random). */
+const PLANNED_ONLY = new Set(['pinball', 'gableSplit']);
 
 function pickSegment(ctx: Ctx, prev: string | null, first: boolean, used: Record<string, number>, maxSpecial: number): SegmentDef {
-  let cands = LIBRARY.filter((d) => !d.regroup && d.available(ctx) && d.type !== prev && !(SPECIAL.has(d.type) && (used[d.type] ?? 0) >= maxSpecial));
+  let cands = LIBRARY.filter((d) => !d.regroup && d.available(ctx) && d.type !== prev && !PLANNED_ONLY.has(d.type) && !(SPECIAL.has(d.type) && (used[d.type] ?? 0) >= maxSpecial));
   if (first) {
     const soft = cands.filter((d) => d.type === 'zigzag' || d.type === 'funnel' || d.type === 'pegs');
     if (soft.length) cands = soft;
@@ -148,16 +158,31 @@ export function planRegroups(count: number, nSeg: number): Set<number> {
   return out;
 }
 
-/** Segment index -> 'galton' | 'lanes': one of each (seeded slots, never first, never adjacent to each other, never a regroup). */
-export function planSpecials(nSeg: number, regroupAt: Set<number>, rng: Rng, want: ('galton' | 'lanes')[]): Map<number, 'galton' | 'lanes'> {
-  const out = new Map<number, 'galton' | 'lanes'>();
+export type SpecialKind = 'galton' | 'lanes' | 'pinball' | 'gableSplit';
+
+/**
+ * Segment index -> special kind (seeded slots, never first, never a regroup). galton / lanes keep to
+ * non-adjacent slots; pinball / gableSplit (only with >= 8 segments, own Rng) avoid being adjacent to any
+ * other special when a slot allows it.
+ */
+export function planSpecials(nSeg: number, regroupAt: Set<number>, rng: Rng, want: SpecialKind[], rng2?: Rng): Map<number, SpecialKind> {
+  const out = new Map<number, SpecialKind>();
   if (nSeg < 6) return out;
-  const order = rng.shuffle(want.slice());
+  const order = rng.shuffle(want.filter((k) => k === 'galton' || k === 'lanes'));
   for (const kind of order) {
     const free: number[] = [];
     for (let i = 1; i < nSeg; i++) if (!regroupAt.has(i) && !out.has(i) && ![...out.keys()].some((k) => Math.abs(k - i) <= 1)) free.push(i);
     const pick = free.length ? free[Math.floor(rng.next() * free.length)] : -1;
     if (pick >= 0) out.set(pick, kind);
+  }
+  if (nSeg >= 8 && rng2) {
+    for (const kind of rng2.shuffle(want.filter((k) => k === 'pinball' || k === 'gableSplit'))) {
+      const open: number[] = [];
+      for (let i = 1; i < nSeg; i++) if (!regroupAt.has(i) && !out.has(i)) open.push(i);
+      const apart = open.filter((i) => ![...out.keys()].some((k) => Math.abs(k - i) <= 1));
+      const pool = apart.length ? apart : open;
+      if (pool.length) out.set(pool[Math.floor(rng2.next() * pool.length)], kind);
+    }
   }
   return out;
 }
@@ -330,6 +355,7 @@ function emitMixed(ctx: Ctx, chain: Vec[], protect: Range[], rng: Rng): void {
 export function generateMap(config: GameConfig, seed: number): MapDef {
   const rng = new Rng(seed);
   laneLog.length = 0;
+  gableLog.length = 0;
   const ctx = makeCtx(config, rng);
   const start = buildStart(ctx);
   const marks: { type: string; idx: number }[] = [{ type: 'start', idx: 0 }];
@@ -341,10 +367,12 @@ export function generateMap(config: GameConfig, seed: number): MapDef {
   const lethalRanges: [number, number, number][] = [];
   const nSeg = Math.max(0, Math.floor(config.map.segments));
   const regroupAt = planRegroups(config.map.regroups ?? 0, nSeg);
-  const wantSpecial: ('galton' | 'lanes')[] = [];
+  const wantSpecial: SpecialKind[] = [];
   if (galtonAvailable(ctx)) wantSpecial.push('galton');
   if (lanesAvailable(ctx)) wantSpecial.push('lanes');
-  const specialAt = planSpecials(nSeg, regroupAt, new Rng((seed ^ 0x47414c54) >>> 0), wantSpecial);
+  if (pinballAvailable(ctx)) wantSpecial.push('pinball');
+  if (gableAvailable(ctx)) wantSpecial.push('gableSplit');
+  const specialAt = planSpecials(nSeg, regroupAt, new Rng((seed ^ 0x47414c54) >>> 0), wantSpecial, new Rng((seed ^ 0x50494e42) >>> 0));
   const usedType: Record<string, number> = {};
   const maxSpecial = nSeg >= 12 ? 2 : 1;
   let lastRegroup: string | null = null;
@@ -354,6 +382,7 @@ export function generateMap(config: GameConfig, seed: number): MapDef {
   const arenas = planArenas(monsterKinds, nSeg, mrng);
   const segRecs: SegRec[] = [];
   const fixedMonsters: Monster[] = [];
+  let pendingOctopus = 0;
   for (let i = 0; i < nSeg; i++) {
     let def: SegmentDef | null = regroupAt.has(i) ? pickRegroup(ctx, lastRegroup) : null;
     if (def) lastRegroup = def.type;
@@ -369,11 +398,21 @@ export function generateMap(config: GameConfig, seed: number): MapDef {
     segRecs.push({ type: def.type, y0: segStartY, y1: ctx.y, regroup: !!def.regroup });
     if (LETHAL_SIDE_SEGMENTS.has(def.type)) lethalRanges.push([segStartY, ctx.y, BOUNCY_SEGMENTS.has(def.type) ? 1 : 0]);
     prev = def.type;
-    for (const ak of arenas.get(i) ?? []) {
+    // octopus arenas wait for a segment whose output is spread/centred (not ramps, side exits)
+    const due = arenas.get(i) ?? [];
+    const octoDue = pendingOctopus + due.filter((k) => k === 'octopus').length;
+    pendingOctopus = 0;
+    const octoOk = octoDue > 0 && octopusFeedOk(def.type, ctx.lastGap);
+    const arenaList: (MonsterKind | 'octopusFunnel')[] = due.filter((k) => k !== 'octopus');
+    if (octoDue > 0 && (octoOk || i === nSeg - 1)) for (let q = 0; q < octoDue; q++) arenaList.push(octoOk && OCTOPUS_CENTRED.has(def.type) ? 'octopus' : 'octopusFunnel');
+    else pendingOctopus = octoDue;
+    for (const ak0 of arenaList) {
+      const centring = ak0 === 'octopusFunnel';
+      const ak = centring ? 'octopus' : ak0;
       marks.push({ type: ak === 'octopus' ? 'octopus' : 'snakePit', idx: ctx.path.length - 1 });
       if (ak === 'octopus') ctx.lastGap = 0;
       if (ak === 'octopus') {
-        const o = buildOctopusArena(ctx, mrng, 'mo');
+        const o = buildOctopusArena(ctx, mrng, 'mo', centring);
         segRecs.push(o.rec);
         fixedMonsters.push(o.monster);
       } else segRecs.push(buildSnakePit(ctx));
@@ -420,7 +459,7 @@ export function generateMap(config: GameConfig, seed: number): MapDef {
   }
   if (config.walls.boundary === 'mixed') {
     const protect: Range[] = [[-Infinity, 2], [finishY0, Infinity]];
-    for (const rec of segRecs) if (rec.regroup || rec.type === 'galton' || rec.type === 'lanes') protect.push([rec.y0, rec.y1]);
+    for (const rec of segRecs) if (rec.regroup || rec.type === 'galton' || rec.type === 'lanes' || rec.type === 'pinball' || rec.type === 'gableSplit') protect.push([rec.y0, rec.y1]);
     emitMixed(ctx, chain, protect, new Rng((seed ^ 0x6d697864) >>> 0));
   } else emitBoundary(ctx, chain, killRanges);
 
@@ -449,7 +488,13 @@ export function generateMap(config: GameConfig, seed: number): MapDef {
     const links = m.links.map((l, i) => {
       if (i !== 0) return l;
       const mo = l.motion;
-      return { ...l, motion: mo.type === 'rotate' ? { ...mo, phase: mo.phase + phi } : { ...mo, center: mo.center + phi } };
+      const motion =
+        mo.type === 'rotate'
+          ? { ...mo, phase: mo.phase + phi }
+          : mo.type === 'oscillate'
+            ? { ...mo, center: mo.center + phi }
+            : { ...mo, rest: mo.rest + phi, up: mo.up + phi };
+      return { ...l, motion };
     });
     return { ...m, pivot: rp(m.pivot), links };
   });

@@ -69,3 +69,23 @@ describe('scenic backgrounds', () => {
     }
   });
 });
+
+describe('flipper preview pose', () => {
+  it('a flipper at rest uses its rest angle regardless of time', () => {
+    
+    const mech = {
+      id: 'f',
+      kind: 'flipper' as const,
+      pivot: { x: 3, y: 4 },
+      links: [
+        {
+          shapes: [{ type: 'box' as const, cx: -1, cy: 0, hw: 1, hh: 0.2, angle: 0 }],
+          motion: { type: 'flipper' as const, rest: -0.45, up: 0.5, upSpeed: 6, downSpeed: 4, hold: 0.12, cooldown: 0.35 },
+        },
+      ],
+      effect: null,
+    };
+    expect(mechanismPoseAt(mech, 0).links[0]).toEqual({ x: 3, y: 4, angle: -0.45 });
+    expect(mechanismPoseAt(mech, 99).links[0].angle).toBe(-0.45);
+  });
+});

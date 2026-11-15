@@ -1,5 +1,5 @@
-import type { LinkPose, MechanismPose } from '../sim/api';
-import type { Mechanism, Vec } from '../core/types';
+import type { LinkPose, MechanismPose } from "../sim/api";
+import type { Mechanism, Vec } from "../core/types";
 
 /** Poses of a mechanism at race time `t` (default 0), computed from its link motions only. */
 export function mechanismPoseAt(m: Mechanism, t = 0): MechanismPose {
@@ -11,9 +11,12 @@ export function mechanismPoseAt(m: Mechanism, t = 0): MechanismPose {
     const link = m.links[i];
     const mo = link.motion;
     const rel =
-      mo.type === 'rotate'
-        ? mo.phase + mo.speed * t
-        : mo.center + mo.amplitude * Math.sin(mo.phase + Math.PI * 2 * mo.frequency * t);
+      mo.type === "flipper"
+        ? mo.rest
+        : mo.type === "rotate"
+          ? mo.phase + mo.speed * t
+          : mo.center +
+            mo.amplitude * Math.sin(mo.phase + Math.PI * 2 * mo.frequency * t);
     angle += rel;
     links.push({ x: px, y: py, angle });
     if (link.tip) {
@@ -24,7 +27,7 @@ export function mechanismPoseAt(m: Mechanism, t = 0): MechanismPose {
     }
   }
   let field: Vec | undefined;
-  if (m.effect === 'attract' || m.effect === 'repel') {
+  if (m.effect === "attract" || m.effect === "repel") {
     const last = links[links.length - 1];
     const a = m.fieldAnchor ?? { x: 0, y: 0 };
     const c = Math.cos(last.angle);
