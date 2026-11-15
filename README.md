@@ -84,6 +84,12 @@ Todas las opciones están en el panel lateral (⚙ en móvil). *Restablecer valo
 | Acciones | Gravedad baja, alta e inclinada; invertir mecanismos; mecanismos rápidos; viento; modo rebote; abrir compuertas. *Gravedad invertida* viene desactivada |
 | Frecuencia / duración | 35 % / 6 s |
 
+**Apariencia**
+
+| Opción | Por defecto |
+|---|---|
+| Fondo | Automático (tema liso del mapa). También: fondo del mar, espacio, nubes, dinosaurios y castillo: escenas dibujadas por código con capas de paralaje. Solo cambia el aspecto: se aplica al instante, incluso en plena carrera, y no obliga a regenerar el mapa. Con «reducir movimiento» activo en el sistema no hay animaciones ambientales |
+
 **Cámara**
 
 | Opción | Por defecto |

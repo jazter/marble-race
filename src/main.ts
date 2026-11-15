@@ -51,9 +51,19 @@ const idleMap = sampleMap(12, config.marbles.radius);
 
 /* ------------------------------------------------------------ panel */
 
+/** Signature of everything that affects generation/simulation (`display.*` is visual only). */
+const genSig = (c: GameConfig): string => JSON.stringify({ ...c, display: null });
+let lastSig = genSig(config);
+renderer.setBackground(config.display.background);
+
 const panel = new ConfigPanel($('config-sections'), config, (c) => {
   saveConfig(c);
-  if (mode === 'preview' || mode === 'race') {
+  // Scenery applies immediately, even mid-race (the race itself runs on a config snapshot).
+  renderer.setBackground(c.display.background);
+  const sig = genSig(c);
+  const changed = sig !== lastSig;
+  lastSig = sig;
+  if (changed && (mode === 'preview' || mode === 'race')) {
     configDirty = true;
     updatePreviewInfo();
   }
@@ -69,7 +79,10 @@ $('btn-reset').addEventListener('click', () => {
   config = defaultConfig();
   panel.setConfig(config);
   saveConfig(config);
-  if (mode === 'preview' || mode === 'race') configDirty = true;
+  renderer.setBackground(config.display.background);
+  const sig = genSig(config);
+  if (sig !== lastSig && (mode === 'preview' || mode === 'race')) configDirty = true;
+  lastSig = sig;
   updatePreviewInfo();
 });
 

@@ -68,6 +68,26 @@ export const SECTIONS: Section[] = [
     ],
   },
   {
+    title: 'Apariencia',
+    icon: '🎨',
+    fields: [
+      {
+        kind: 'select',
+        label: 'Fondo',
+        path: 'display.background',
+        hint: 'Solo visual; se aplica al instante',
+        options: [
+          ['auto', 'Automático'],
+          ['sea', 'Fondo del mar'],
+          ['space', 'Espacio'],
+          ['clouds', 'Nubes'],
+          ['dinosaurs', 'Dinosaurios'],
+          ['castle', 'Castillo'],
+        ],
+      },
+    ],
+  },
+  {
     title: 'Física',
     icon: '🌍',
     fields: [

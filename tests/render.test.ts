@@ -57,3 +57,15 @@ describe('monster rendering helpers', () => {
     }
   });
 });
+
+import { SCENE_PALETTES, scenePalette } from '../src/render/backgrounds';
+
+describe('scenic backgrounds', () => {
+  it('has a palette per scenic kind and none for auto', () => {
+    expect(scenePalette('auto')).toBeNull();
+    for (const k of ['sea', 'space', 'clouds', 'dinosaurs', 'castle'] as const) {
+      expect(scenePalette(k)).toBe(SCENE_PALETTES[k]);
+      expect(SCENE_PALETTES[k].wall).toMatch(/^#/);
+    }
+  });
+});

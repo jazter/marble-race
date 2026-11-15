@@ -2,7 +2,8 @@
  * Canvas 2D renderer for the marble race: course, mechanisms, marbles,
  * particles and minimap. Pure presentation — never feeds back into the sim.
  */
-import type { EffectType, GameConfig, WallReaction } from '../core/config';
+import type { BackgroundKind, EffectType, GameConfig, WallReaction } from '../core/config';
+import { BackgroundPainter, scenePalette, type ScenePalette, type SceneKind } from './backgrounds';
 import type { LocalShape, MapDef, MarbleProfile, Monster, StaticShape, Vec, Wall } from '../core/types';
 import type { CameraState, MarbleState, MechanismPose, MonsterState, SimEvent, Simulation, SwitchState } from '../sim/api';
 import { alpha, darken, lighten, mix } from './color';
@@ -126,6 +127,8 @@ export class Renderer {
   private fxLast = new Map<string, number>();
   private particles = new ParticleSystem();
   private clock = 0;
+  private bgKind: BackgroundKind;
+  private bgPainter = new BackgroundPainter();
 
   /** Name tags above the top-3 marbles. */
   nameTags = true;
@@ -152,11 +155,21 @@ export class Renderer {
     this.mini = minimap ?? null;
     this.miniCtx = this.mini ? this.mini.getContext('2d') : null;
     this.config = config;
+    this.bgKind = config.display?.background ?? 'auto';
     this.resize();
   }
 
   setConfig(config: GameConfig): void {
     this.config = config;
+  }
+
+  /** Scenic backdrop; read from the live UI config (not the race snapshot) so it switches instantly. */
+  setBackground(kind: BackgroundKind): void {
+    this.bgKind = kind;
+  }
+
+  private scene(): ScenePalette | null {
+    return scenePalette(this.bgKind);
   }
 
   /* ------------------------------------------------------------ setup */
@@ -456,16 +469,21 @@ export class Renderer {
 
     // background + parallax dots
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.fillStyle = map.theme.background;
-    ctx.fillRect(0, 0, this.W, this.H);
-    this.drawBackdrop(view);
+    const scene = this.scene();
+    if (scene) {
+      this.bgPainter.draw(ctx, this.bgKind as SceneKind, this.W, this.H, this.dpr, (this.W / 2 - tx) / s, (this.H / 2 - ty) / s, t);
+    } else {
+      ctx.fillStyle = map.theme.background;
+      ctx.fillRect(0, 0, this.W, this.H);
+      this.drawBackdrop(view);
+    }
 
     ctx.setTransform(s, 0, 0, s, tx, ty);
     ctx.lineJoin = 'round';
     ctx.lineCap = 'round';
 
     // start area outline
-    ctx.strokeStyle = alpha(map.theme.accent, 0.35);
+    ctx.strokeStyle = alpha((scene ?? map.theme).accent, 0.35);
     ctx.lineWidth = 0.12;
     ctx.setLineDash([0.5, 0.4]);
     pathPoly(ctx, map.start.area);
@@ -499,7 +517,7 @@ export class Renderer {
       if (!intersects(g.box, box)) continue;
       const a = openGates.size === 0 && !this.gateAlpha.has(g.id) ? 1 : (this.gateAlpha.get(g.id) ?? 1);
       if (a < 0.03) continue;
-      this.drawGate(g.shape, a, map.theme.accent);
+      this.drawGate(g.shape, a, (scene ?? map.theme).accent);
     }
 
     // mechanisms
@@ -618,10 +636,11 @@ export class Renderer {
 
   private drawWall(w: Wall, t: number): void {
     const ctx = this.ctx;
-    const theme = this.map!.theme;
+    const scene = this.scene();
+    const theme = scene ?? this.map!.theme;
     const re = this.reactionOf(w);
     let fill = theme.wall;
-    let edge = darken(theme.wall, 0.55);
+    let edge = scene ? scene.wallEdge : darken(theme.wall, 0.55);
     let glow: string | null = null;
     switch (re) {
       case 'bounce':
@@ -652,6 +671,11 @@ export class Renderer {
     const glowA = re === 'kill' ? 0.22 + 0.15 * Math.sin(t * 5) : 0.2;
     if (sh.type === 'polyline') {
       pathLine(ctx, sh.points);
+      if (scene) {
+        ctx.strokeStyle = scene.wallShadow;
+        ctx.lineWidth = sh.thickness + 0.5;
+        ctx.stroke();
+      }
       if (glow) {
         ctx.strokeStyle = alpha(glow, glowA);
         ctx.lineWidth = sh.thickness + 0.8;
@@ -669,6 +693,11 @@ export class Renderer {
       if (re === 'kill') this.drawLavaSpikes(sh.points, sh.thickness, t);
     } else if (sh.type === 'polygon') {
       pathPoly(ctx, sh.points);
+      if (scene) {
+        ctx.strokeStyle = scene.wallShadow;
+        ctx.lineWidth = 0.5;
+        ctx.stroke();
+      }
       if (glow) {
         ctx.strokeStyle = alpha(glow, glowA);
         ctx.lineWidth = 0.8;
@@ -681,6 +710,12 @@ export class Renderer {
       ctx.stroke();
     } else {
       const { center: c, radius: r } = sh;
+      if (scene) {
+        ctx.fillStyle = scene.wallShadow;
+        ctx.beginPath();
+        ctx.arc(c.x, c.y, r + 0.25, 0, Math.PI * 2);
+        ctx.fill();
+      }
       if (glow) {
         ctx.fillStyle = alpha(glow, glowA + (style === 'bumper' ? 0.08 * Math.sin(t * 4) : 0));
         ctx.beginPath();
