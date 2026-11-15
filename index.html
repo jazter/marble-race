@@ -12,7 +12,7 @@
       <aside id="panel">
         <header class="panel-head">
           <h1><span class="logo"></span>Carrera de Canicas</h1>
-          <button id="btn-close-panel" class="btn icon only-mobile" type="button" aria-label="Cerrar">✕</button>
+          <button id="btn-close-panel" class="btn panel-close" type="button" aria-label="Cerrar configuración" title="Cerrar (Esc)">✕ <span>Cerrar</span></button>
         </header>
         <div class="sound-row">
           <button id="btn-music-panel" class="btn icon btn-music" type="button" aria-label="Música"></button>
@@ -26,12 +26,13 @@
           <button id="btn-reset" class="btn" type="button">Restablecer valores</button>
         </footer>
       </aside>
+      <div id="panel-backdrop" aria-hidden="true"></div>
 
       <main id="stage">
         <canvas id="game"></canvas>
         <canvas id="minimap"></canvas>
 
-        <button id="btn-open-panel" class="btn icon only-mobile" type="button" aria-label="Configuración">⚙</button>
+        <button id="btn-open-panel" class="btn panel-open-btn" type="button" aria-label="Abrir configuración" title="Configurar">⚙ <span class="lbl">Configurar</span></button>
 
         <!-- Idle -->
         <section id="welcome" class="overlay center show">

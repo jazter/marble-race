@@ -69,10 +69,15 @@ const panel = new ConfigPanel($('config-sections'), config, (c) => {
   }
 });
 
+// The settings panel can be opened/closed on every screen size. Desktops start with it
+// open; phones and tablets get more room for the race by closing it when a map is generated.
 const openPanel = () => document.body.classList.add('panel-open');
 const closePanel = () => document.body.classList.remove('panel-open');
+const isCompact = () => window.innerWidth <= 1180;
+if (window.innerWidth > 800) openPanel();
 $('btn-open-panel').addEventListener('click', openPanel);
 $('btn-close-panel').addEventListener('click', closePanel);
+$('panel-backdrop').addEventListener('click', closePanel);
 
 $('btn-reset').addEventListener('click', () => {
   clearSavedConfig();
@@ -118,7 +123,7 @@ async function generate(randomSeed = false): Promise<void> {
     panel.refresh();
     saveConfig(config);
   }
-  closePanel();
+  if (isCompact()) closePanel();
   disposeRace();
   const cfg: GameConfig = structuredClone(config);
   abort = new AbortController();
@@ -322,6 +327,10 @@ if (window.matchMedia('(max-width: 800px)').matches) $('leaderboard').classList.
 
 window.addEventListener('keydown', (e) => {
   if (isDialogOpen()) return;
+  if (e.key === 'Escape' && document.body.classList.contains('panel-open')) {
+    closePanel();
+    return;
+  }
   const t = e.target as HTMLElement;
   if (t && /INPUT|SELECT|TEXTAREA/.test(t.tagName) && e.code === 'Space') return;
   if (e.code === 'Space' && mode === 'race') {

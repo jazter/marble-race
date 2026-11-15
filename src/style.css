@@ -92,7 +92,16 @@ body.mode-race #minimap, body.mode-preview #minimap { display: block; }
 body.mode-preview #minimap { bottom: auto; top: 12px; }
 /* race: top-left so it never sits under the leaderboard (right) or the toasts (bottom-left) */
 body.mode-race #minimap { left: 12px; right: auto; top: 12px; bottom: auto; }
-#btn-open-panel { position: absolute; top: 10px; left: 10px; z-index: 14; background: #131824dd; }
+/* Settings panel open / close (every screen size) */
+#btn-open-panel { display: none; position: absolute; top: calc(10px + env(safe-area-inset-top, 0px)); left: calc(10px + env(safe-area-inset-left, 0px)); z-index: 14; background: #131824e6; min-height: 40px; align-items: center; gap: 6px; font-weight: 600; }
+body:not(.panel-open) #btn-open-panel { display: inline-flex; }
+.panel-close { display: inline-flex; align-items: center; gap: 6px; min-height: 40px; font-weight: 600; }
+#panel-backdrop { display: none; }
+@media (min-width: 801px) {
+  body:not(.panel-open) #app { grid-template-columns: 1fr; }
+  body:not(.panel-open) #panel { display: none; }
+  body:not(.panel-open).mode-race #minimap { top: 62px; }
+}
 
 .overlay { position: absolute; inset: 0; display: none; z-index: 10; }
 .overlay.show { display: flex; }
@@ -186,6 +195,9 @@ body.mode-race #minimap { left: 12px; right: auto; top: 12px; bottom: auto; }
   #app { grid-template-columns: 1fr; }
   #panel { position: fixed; inset: 0; transform: translateX(-102%); transition: transform .2s; }
   body.panel-open #panel { transform: none; }
+  /* compact open button: icon only, so it doesn't collide with the HUD stats */
+  #btn-open-panel .lbl { display: none; }
+  #btn-open-panel { min-width: 44px; justify-content: center; font-size: 18px; }
   .hud-top { top: 8px; left: 56px; transform: none; gap: 4px; }
   .stat { min-width: 0; padding: 3px 8px; }
   .stat b { font-size: 15px; }
@@ -273,3 +285,9 @@ body.monsters-demo #app { grid-template-columns: 1fr !important; }
 .lb-row.named .lb-name .nm-sub { font-weight: 500; font-size: 11px; color: #ffffff8c; }
 .lb-row.named .swatch { box-shadow: 0 0 0 2px #ffcc33, 0 0 8px #ffcc3399; }
 .lb-row.named.out { opacity: .6; }
+
+/* small tablets: the panel is a side sheet over a dimmed backdrop (tap outside to close) */
+@media (min-width: 560px) and (max-width: 800px) {
+  #panel { right: auto; width: min(440px, 86vw); box-shadow: 12px 0 40px #000a; }
+  body.panel-open #panel-backdrop { display: block; position: fixed; inset: 0; z-index: 29; background: #05070bb3; }
+}
