@@ -87,7 +87,7 @@ Todas las opciones están en el panel lateral (⚙ en móvil). *Restablecer valo
 | Opción | Por defecto |
 |---|---|
 | Activar interruptores | Sí |
-| Acciones | Gravedad baja, alta e inclinada; invertir mecanismos; mecanismos rápidos; viento; modo rebote; abrir compuertas. *Gravedad invertida* viene desactivada |
+| Acciones | Gravedad baja, alta e inclinada; invertir mecanismos; mecanismos rápidos; viento (14–22% de la gravedad, a favor de la rampa del botón); modo rebote; abrir compuertas. *Gravedad invertida* viene desactivada |
 | Frecuencia / duración | 35 % / 6 s |
 
 **Apariencia**

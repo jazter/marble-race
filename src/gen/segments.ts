@@ -490,7 +490,9 @@ function placeOnRamp(ctx: Ctx, rp: Ramp, t: number, type: SwitchActionType, gate
       value = rng.range(2, 3);
       break;
     case 'wind':
-      value = rng.range(4, 8);
+      // relative to gravity: wind tilts the effective gravity ~8-12 deg. Stronger wind (it used to be
+      // 4-8 m/s^2, i.e. up to ~40 deg) pinned marbles against walls on every ramp facing it
+      value = cfg.physics.gravity * rng.range(0.14, 0.22);
       angle = cfg.physics.gravityAngle + Math.sign(rp.b.x - rp.a.x) * 90; // blows downhill along the host ramp (never uphill: would trap marbles)
       rng.next();
       break;
@@ -575,7 +577,7 @@ function capEnd(ctx: Ctx, p: Vec): void {
 
 function regroupSpeed(ctx: Ctx): number {
   // brisk enough that a full field of marbles doesn't queue for ages (more survive since stun replaced kill)
-  return 1.35 * (0.5 + 0.5 * ctx.diff) * ctx.rng.range(0.9, 1.1);
+  return 1.55 * (0.5 + 0.5 * ctx.diff) * ctx.rng.range(0.9, 1.1);
 }
 
 function addRotor(ctx: Ctx, x: number, y: number, L: number, blades: number, speed: number): void {
