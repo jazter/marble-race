@@ -341,6 +341,9 @@ class SimImpl implements Simulation {
     });
   }
 
+  private readonly scratchVec = new Vec2(0, 0);
+  private readonly scratchAngles: number[] = [];
+
   private buildMarbles(roster: MarbleProfile[]): void {
     const { config, map } = this;
     for (let idx = 0; idx < roster.length; idx++) {
@@ -555,14 +558,17 @@ class SimImpl implements Simulation {
     for (const rt of this.mechs) {
       this.scanFlipperTouch(rt);
       advanceState(rt, phys.mechanismSpeed, dt);
-      const prev = rt.poses.map((p) => ({ x: p.x, y: p.y, angle: p.angle }));
+      const n = rt.poses.length;
+      const prevAngle = this.scratchAngles;
+      for (let i = 0; i < n; i++) prevAngle[i] = rt.poses[i].angle;
       computePoses(rt);
       for (let i = 0; i < rt.bodies.length; i++) {
         const b = rt.bodies[i];
         const t = rt.poses[i];
         const pos = b.getPosition();
-        b.setLinearVelocity(new Vec2((t.x - pos.x) / dt, (t.y - pos.y) / dt));
-        b.setAngularVelocity((t.angle - prev[i].angle) / dt);
+        this.scratchVec.set((t.x - pos.x) / dt, (t.y - pos.y) / dt);
+        b.setLinearVelocity(this.scratchVec);
+        b.setAngularVelocity((t.angle - prevAngle[i]) / dt);
       }
     }
 
@@ -596,11 +602,13 @@ class SimImpl implements Simulation {
       }
       if (ax !== 0 || ay !== 0) {
         const mass = body.getMass();
-        body.applyForceToCenter(new Vec2(mass * ax, mass * ay), true);
+        this.scratchVec.set(mass * ax, mass * ay);
+        body.applyForceToCenter(this.scratchVec, true);
       }
       if (this.slowCount[m.id] > 0) {
         const v = body.getLinearVelocity();
-        body.setLinearVelocity(new Vec2(v.x * slowMul, v.y * slowMul));
+        this.scratchVec.set(v.x * slowMul, v.y * slowMul);
+        body.setLinearVelocity(this.scratchVec);
       }
     }
 
@@ -794,6 +802,7 @@ class SimImpl implements Simulation {
     for (const { m } of cand) {
       this.finishedCount++;
       m.status = 'finished';
+      this.bodies[m.id]?.setSleepingAllowed(true);
       m.rank = this.finishedCount;
       m.finishTime = this.raceTime();
       m.progress = this.prog.total + 0.01 * (n - m.rank + 1);

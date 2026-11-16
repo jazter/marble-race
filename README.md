@@ -95,7 +95,7 @@ Todas las opciones están en el panel lateral (⚙ en móvil). *Restablecer valo
 | Opción | Por defecto |
 |---|---|
 | Fondo | Automático (tema liso del mapa). También: fondo del mar, espacio, nubes, dinosaurios y castillo: escenas dibujadas por código con capas de paralaje. Solo cambia el aspecto: se aplica al instante, incluso en plena carrera, y no obliga a regenerar el mapa. Con «reducir movimiento» activo en el sistema no hay animaciones ambientales |
-| Resolución adaptable | Automática: si el dispositivo no alcanza ~28 cuadros por segundo durante la carrera, el juego baja la resolución del dibujo por pasos (y la vuelve a subir si sobra potencia), para que no se trabe. Un cuadro lento nunca pone la carrera en cámara lenta |
+| Resolución adaptable | Automática: si el dispositivo no alcanza ~28 cuadros por segundo durante la carrera, el juego baja la resolución del dibujo por pasos y pasa a un modo más liviano (sin sombras ni brillos en las paredes, sin animaciones del fondo, la mitad de partículas); la vuelve a subir si sobra potencia y recuerda el nivel para la próxima visita. Un cuadro lento nunca pone la carrera en cámara lenta |
 | Mantener la pantalla encendida | Sí: en teléfonos y tablets la pantalla no se apaga mientras se ve el mapa o la carrera (Screen Wake Lock; Chrome/Android, Safari iOS 16.4+, Firefox 126+) |
 
 **Cámara**

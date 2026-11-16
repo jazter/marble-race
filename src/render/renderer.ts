@@ -3,6 +3,7 @@
  * particles and minimap. Pure presentation — never feeds back into the sim.
  */
 import { stunnerOn } from '../core/stun';
+import { TextCache } from './textCache';
 import type { BackgroundKind, EffectType, GameConfig, WallReaction } from '../core/config';
 import { BackgroundPainter, scenePalette, type ScenePalette, type SceneKind } from './backgrounds';
 import type { LocalShape, MapDef, MarbleProfile, Monster, StaticShape, Vec, Wall } from '../core/types';
@@ -116,6 +117,7 @@ export class Renderer {
   private miniOrigin: Vec = { x: 0, y: 0 };
 
   private dpr = 1;
+  private texts = new TextCache();
   private qualityScale = 1;
   private W = 1;
   private H = 1;
@@ -192,15 +194,22 @@ export class Renderer {
     return this.qualityScale;
   }
 
+  /** Lighter visuals (fewer passes / particles) once the resolution had to be lowered. */
+  private get lite(): boolean {
+    return this.qualityScale < 1;
+  }
+
   setQuality(q: number): void {
     const v = Math.max(0.4, Math.min(1, q));
     if (v === this.qualityScale) return;
     this.qualityScale = v;
+    this.particles.density = v < 1 ? 0.5 : 1;
     this.resize();
   }
 
   resize(): void {
-    this.dpr = Math.max(0.75, Math.min(window.devicePixelRatio || 1, 2.5) * this.qualityScale);
+    // DPR capped at 2: on 3x phones the extra pixels cost a lot and are barely visible here
+    this.dpr = Math.max(0.75, Math.min(window.devicePixelRatio || 1, 2) * this.qualityScale);
     const w = Math.max(1, Math.round(this.canvas.clientWidth * this.dpr));
     const h = Math.max(1, Math.round(this.canvas.clientHeight * this.dpr));
     if (w !== this.canvas.width || h !== this.canvas.height) {
@@ -212,6 +221,7 @@ export class Renderer {
     if (this.pv.fitted) this.previewFit();
     if (this.map) this.buildMinimap();
     clearSkinCache();
+    this.texts.clear();
   }
 
   setMap(map: MapDef): void {
@@ -499,11 +509,11 @@ export class Renderer {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     const scene = this.scene();
     if (scene) {
-      this.bgPainter.draw(ctx, this.bgKind as SceneKind, this.W, this.H, this.dpr, (this.W / 2 - tx) / s, (this.H / 2 - ty) / s, t);
+      this.bgPainter.draw(ctx, this.bgKind as SceneKind, this.W, this.H, this.dpr, (this.W / 2 - tx) / s, (this.H / 2 - ty) / s, t, this.lite);
     } else {
       ctx.fillStyle = map.theme.background;
       ctx.fillRect(0, 0, this.W, this.H);
-      this.drawBackdrop(view);
+      if (!this.lite) this.drawBackdrop(view);
     }
 
     ctx.setTransform(s, 0, 0, s, tx, ty);
@@ -581,7 +591,7 @@ export class Renderer {
     if (this.monsters.length) this.drawMonsters(box, marbles as readonly EnvMarble[], monsterStates);
 
     // particles
-    this.particles.draw(ctx);
+    this.particles.draw(ctx, box, s);
 
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     // offscreen-kill zone dimming
@@ -714,9 +724,11 @@ export class Renderer {
     const sh = w.shape;
     const style = w.style ?? 'wall';
     const glowA = re === 'kill' ? 0.22 + 0.15 * Math.sin(t * 5) : 0.2;
+    const lite = this.lite;
+    if (lite && re !== 'kill' && re !== 'stun') glow = null; // colour alone tells the reaction
     if (sh.type === 'polyline') {
       pathLine(ctx, sh.points);
-      if (scene) {
+      if (scene && !lite) {
         ctx.strokeStyle = scene.wallShadow;
         ctx.lineWidth = sh.thickness + 0.5;
         ctx.stroke();
@@ -732,14 +744,16 @@ export class Renderer {
       ctx.strokeStyle = fill;
       ctx.lineWidth = sh.thickness;
       ctx.stroke();
-      ctx.strokeStyle = re === 'solid' ? alpha('#ffffff', 0.12) : alpha(lighten(fill, 0.5), 0.45);
-      ctx.lineWidth = Math.max(0.06, sh.thickness * 0.28);
-      ctx.stroke();
+      if (!lite) {
+        ctx.strokeStyle = re === 'solid' ? alpha('#ffffff', 0.12) : alpha(lighten(fill, 0.5), 0.45);
+        ctx.lineWidth = Math.max(0.06, sh.thickness * 0.28);
+        ctx.stroke();
+      }
       if (re === 'kill') this.drawLavaSpikes(sh.points, sh.thickness, t);
-      if (re === 'stun' && stunOn) this.drawSparks(sh.points, t, w.id.length);
+      if (re === 'stun' && stunOn && !lite) this.drawSparks(sh.points, t, w.id.length);
     } else if (sh.type === 'polygon') {
       pathPoly(ctx, sh.points);
-      if (scene) {
+      if (scene && !lite) {
         ctx.strokeStyle = scene.wallShadow;
         ctx.lineWidth = 0.5;
         ctx.stroke();
@@ -756,7 +770,7 @@ export class Renderer {
       ctx.stroke();
     } else {
       const { center: c, radius: r } = sh;
-      if (scene) {
+      if (scene && !lite) {
         ctx.fillStyle = scene.wallShadow;
         ctx.beginPath();
         ctx.arc(c.x, c.y, r + 0.25, 0, Math.PI * 2);
@@ -781,10 +795,12 @@ export class Renderer {
         ctx.arc(c.x, c.y, r * 0.55, 0, Math.PI * 2);
         ctx.fill();
       }
-      ctx.fillStyle = alpha('#ffffff', 0.35);
-      ctx.beginPath();
-      ctx.arc(c.x - r * 0.3, c.y - r * 0.3, r * 0.22, 0, Math.PI * 2);
-      ctx.fill();
+      if (!lite) {
+        ctx.fillStyle = alpha('#ffffff', 0.35);
+        ctx.beginPath();
+        ctx.arc(c.x - r * 0.3, c.y - r * 0.3, r * 0.22, 0, Math.PI * 2);
+        ctx.fill();
+      }
     }
     if (re === 'launch' && w.launchDir) this.drawChevrons(sh, w.launchDir, t);
     if (re === 'stun' && sh.type === 'circle') this.drawStunBolt(sh.center.x, sh.center.y, sh.radius * 0.75, stunOn);
@@ -1217,10 +1233,13 @@ export class Renderer {
     const pulse = on ? 0.5 + 0.5 * Math.sin(t * 6) : 0;
     ctx.save();
     // field (barely visible while the coil is switched off)
-    const g = ctx.createRadialGradient(c.x, c.y, r * 0.1, c.x, c.y, r);
-    g.addColorStop(0, alpha(col, on ? 0.32 + 0.1 * pulse : 0.12));
-    g.addColorStop(1, alpha(col, on ? 0.05 : 0.02));
-    ctx.fillStyle = g;
+    if (this.lite) ctx.fillStyle = alpha(col, on ? 0.18 : 0.06);
+    else {
+      const g = ctx.createRadialGradient(c.x, c.y, r * 0.1, c.x, c.y, r);
+      g.addColorStop(0, alpha(col, on ? 0.32 + 0.1 * pulse : 0.12));
+      g.addColorStop(1, alpha(col, on ? 0.05 : 0.02));
+      ctx.fillStyle = g;
+    }
     ctx.beginPath();
     ctx.arc(c.x, c.y, r, 0, Math.PI * 2);
     ctx.fill();
@@ -1414,20 +1433,19 @@ export class Renderer {
 
   private drawLabels(view: View): void {
     const ctx = this.ctx;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
     for (const l of this.labels) {
-      const px = Math.max(9 * this.dpr, Math.min(l.size * this.dpr, l.size * this.dpr * (view.s / (28 * this.dpr)) + 6 * this.dpr));
+      const px = Math.round(Math.max(9 * this.dpr, Math.min(l.size * this.dpr, l.size * this.dpr * (view.s / (28 * this.dpr)) + 6 * this.dpr)));
       const x = l.x * view.s + view.tx;
       const y = l.y * view.s + view.ty;
       if (x < -100 || y < -30 || x > this.W + 100 || y > this.H + 30) continue;
-      ctx.font = FONT.replace('600', l.bold ? '800' : '600').replace('12px', `${px}px`);
-      ctx.lineWidth = 3 * this.dpr;
-      ctx.strokeStyle = 'rgba(8,10,16,0.85)';
-      ctx.lineJoin = 'round';
-      ctx.strokeText(l.text, x, y);
-      ctx.fillStyle = l.color;
-      ctx.fillText(l.text, x, y);
+      this.texts.draw(ctx, l.text, x, y, {
+        font: FONT.replace('600', l.bold ? '800' : '600').replace('12px', `${px}px`),
+        px,
+        fill: l.color,
+        stroke: 'rgba(8,10,16,0.85)',
+        lineWidth: Math.round(3 * this.dpr),
+        baseline: 'middle',
+      });
     }
   }
 
@@ -1467,10 +1485,9 @@ export class Renderer {
     if (this.nameTags && live.some((m) => m.status !== 'waiting')) {
       for (const m of live.slice(0, 3)) topIds.add(m.id);
     }
-    const fontPx = 11 * dpr;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'alphabetic';
-    ctx.font = FONT.replace('12px', `${fontPx}px`);
+    const fontPx = Math.round(11 * dpr);
+    const font = FONT.replace('12px', `${fontPx}px`);
+    const tagStyle = (fill: string) => ({ font, px: fontPx, fill, stroke: 'rgba(8,10,16,0.9)', lineWidth: Math.round(3 * dpr), baseline: 'alphabetic' as const });
     const placed: { x0: number; y0: number; x1: number; y1: number }[] = [];
     // highlight rings for named marbles
     for (const m of live) {
@@ -1498,7 +1515,10 @@ export class Renderer {
       let y = m.y * view.s + view.ty - m.radius * view.s - 8 * dpr;
       if (x < 0 || y < 0 || x > this.W || y > this.H) continue;
       const txt = top ? `${idx + 1}º ${custom ?? m.profile.name}` : (custom as string);
-      const w = ctx.measureText(txt).width + 6 * dpr;
+      const st = tagStyle(top ? ['#ffd54a', '#dfe5ee', '#f0a36b'][Math.min(idx, 2)] : '#ffe9a6');
+      const sprite = this.texts.get(txt, st);
+      if (!sprite) continue;
+      const w = sprite.textW + 6 * dpr;
       const h = fontPx + 4 * dpr;
       // nudge upwards to avoid piling tags on top of each other
       for (let tries = 0; tries < 4; tries++) {
@@ -1508,12 +1528,7 @@ export class Renderer {
       }
       if (y < 0) continue;
       placed.push({ x0: x - w / 2, x1: x + w / 2, y0: y - h, y1: y });
-      ctx.lineWidth = 3 * dpr;
-      ctx.lineJoin = 'round';
-      ctx.strokeStyle = 'rgba(8,10,16,0.9)';
-      ctx.strokeText(txt, x, y);
-      ctx.fillStyle = top ? ['#ffd54a', '#dfe5ee', '#f0a36b'][Math.min(idx, 2)] : '#ffe9a6';
-      ctx.fillText(txt, x, y);
+      ctx.drawImage(sprite.canvas, Math.round(x - sprite.ax), Math.round(y - sprite.ay));
     }
   }
 

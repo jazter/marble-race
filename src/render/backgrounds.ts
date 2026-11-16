@@ -988,6 +988,8 @@ export class BackgroundPainter {
   private kinds = ['sea', 'space', 'clouds', 'dinosaurs', 'castle'];
   private gradKey = '';
   private grad: CanvasGradient | null = null;
+  private vignetteKey = '';
+  private vignette: CanvasGradient | null = null;
   /** True when the user prefers reduced motion (no ambient animation). */
   reducedMotion = false;
 
@@ -1055,9 +1057,10 @@ export class BackgroundPainter {
   /**
    * Paint the whole backdrop. (camX, camY) = world point at the screen centre, in metres.
    */
-  draw(c: Ctx, kind: SceneKind, W: number, H: number, dpr: number, camX: number, camY: number, t: number): void {
+  draw(c: Ctx, kind: SceneKind, W: number, H: number, dpr: number, camX: number, camY: number, t: number, lite = false): void {
     const scene = this.scene(kind);
-    const moving = !this.reducedMotion;
+    // lite (slow device): no animated bits and no vignette — fewer full-screen passes
+    const moving = !this.reducedMotion && !lite;
     const bucket = dpr > 1.5 ? 2 : 1;
     c.setTransform(1, 0, 0, 1, 0, 0);
     // sky
@@ -1073,6 +1076,7 @@ export class BackgroundPainter {
     scene.before?.(c, W, H, dpr, t, moving);
 
     scene.layers.forEach((layer, li) => {
+      if (lite && layer.empty) return; // animation-only layer
       const S = layer.tile * dpr;
       const entry = this.tile(kind, li, layer, bucket);
       const k = REF_PX_PER_M * layer.par * dpr;
@@ -1098,19 +1102,25 @@ export class BackgroundPainter {
               c.setTransform(1, 0, 0, 1, 0, 0);
             } else c.drawImage(entry.canvas, x0, y0, x1 - x0, y1 - y0);
           }
-          if (moving || layer.empty || entry.anim.length) this.drawAnim(c, entry.anim, x0, y0, S, layer.tile, dpr, t, moving, W, H, layer.alpha ?? 1);
+          if (!lite && (moving || layer.empty || entry.anim.length)) this.drawAnim(c, entry.anim, x0, y0, S, layer.tile, dpr, t, moving, W, H, layer.alpha ?? 1);
         }
       }
       c.globalAlpha = 1;
     });
 
     scene.after?.(c, W, H, dpr, t, moving);
+    if (lite) return;
 
-    // vignette
-    const vg = c.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.35, W / 2, H / 2, Math.hypot(W, H) * 0.6);
-    vg.addColorStop(0, 'rgba(0,0,0,0)');
-    vg.addColorStop(1, scene.vignette);
-    c.fillStyle = vg;
+    // vignette (gradient built once per size)
+    const vk = `${kind}:${W}x${H}`;
+    if (vk !== this.vignetteKey || !this.vignette) {
+      const vg = c.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.35, W / 2, H / 2, Math.hypot(W, H) * 0.6);
+      vg.addColorStop(0, 'rgba(0,0,0,0)');
+      vg.addColorStop(1, scene.vignette);
+      this.vignette = vg;
+      this.vignetteKey = vk;
+    }
+    c.fillStyle = this.vignette;
     c.fillRect(0, 0, W, H);
   }
 

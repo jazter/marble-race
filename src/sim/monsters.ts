@@ -46,6 +46,9 @@ const SWERVE = {
 abstract class Base<M extends Monster> {
   phase: MonsterPhase = 'idle';
   phaseTime = 0;
+  /** Times this monster caught each marble (indexed by marble id). */
+  private readonly grabCount: number[] = [];
+  private sh: Shared | undefined;
 
   constructor(
     readonly def: M,
@@ -64,9 +67,9 @@ abstract class Base<M extends Monster> {
 
   protected catchable(m: MarbleState): boolean {
     if (m.status !== 'racing' || m.heldBy !== undefined) return false;
-    const sh = SHARED.get(this.h);
+    if ((this.grabCount[m.id] ?? 0) >= MAX_GRABS_SAME_MARBLE) return false;
+    const sh = (this.sh ??= SHARED.get(this.h));
     if (!sh) return true;
-    if ((sh.grabs.get(`${this.def.id}|${m.id}`) ?? 0) >= MAX_GRABS_SAME_MARBLE) return false;
     const until = sh.immuneUntil.get(m.id);
     return until === undefined || sh.now >= until - EPS;
   }
@@ -79,11 +82,7 @@ abstract class Base<M extends Monster> {
   }
 
   protected grab(t: number, m: MarbleState, x: number, y: number): void {
-    const sh = SHARED.get(this.h);
-    if (sh) {
-      const k = `${this.def.id}|${m.id}`;
-      sh.grabs.set(k, (sh.grabs.get(k) ?? 0) + 1);
-    }
+    this.grabCount[m.id] = (this.grabCount[m.id] ?? 0) + 1;
     this.h.hold(m, this.def.id);
     m.heldBy = this.def.id;
     this.place(m, x, y);
@@ -168,9 +167,13 @@ class Spider extends Base<MonsterOf<'spider'>> {
       let best: MarbleState | null = null;
       let bestD = Infinity;
       for (const m of this.h.marbles) {
+        const ddx = m.x - bx;
+        const ddy = m.y - by;
+        const rr = d.size + m.radius;
+        if (ddx > rr || ddx < -rr || ddy > rr || ddy < -rr) continue;
         if (!this.catchable(m)) continue;
-        const dist = Math.hypot(m.x - bx, m.y - by);
-        if (dist < d.size + m.radius && dist < bestD) {
+        const dist = Math.hypot(ddx, ddy);
+        if (dist < rr && dist < bestD) {
           best = m;
           bestD = dist;
         }
@@ -218,12 +221,11 @@ class Spider extends Base<MonsterOf<'spider'>> {
       let best = -1;
       let bestAlong = Infinity;
       for (const m of this.h.marbles) {
-        if (!this.catchable(m)) continue;
         const rx = m.x - d.anchor.x;
         const ry = m.y - d.anchor.y;
         const along = rx * this.dx + ry * this.dy;
         const lat = Math.abs(rx * this.dy - ry * this.dx);
-        if (lat < d.huntWidth && along >= this.len && along <= d.maxLength && along < bestAlong) {
+        if (lat < d.huntWidth && along >= this.len && along <= d.maxLength && along < bestAlong && this.catchable(m)) {
           best = m.id;
           bestAlong = along;
         }
@@ -318,8 +320,8 @@ class Octopus extends Base<MonsterOf<'octopus'>> {
           let best = -1;
           let bestD = Infinity;
           for (const m of this.h.marbles) {
-            if (!this.catchable(m) || targeted.has(m.id)) continue;
             if (Math.hypot(m.x - d.center.x, m.y - d.center.y) > d.reach) continue;
+            if (targeted.has(m.id) || !this.catchable(m)) continue;
             const dist = Math.hypot(m.x - tn.x, m.y - tn.y);
             if (dist < bestD) {
               best = m.id;
@@ -528,12 +530,12 @@ class Crosser extends Base<Traveller> {
     if (this.held < 0 && !(d.kind === 'snake' && this.caught) && this.passT < this.total - 0.3) {
       let best = Infinity;
       for (const m of this.h.marbles) {
-        if (!this.catchable(m) || this.ignore.includes(m.id)) continue;
         const rx = m.x - lx;
         const ry = m.y - ly;
         const along = rx * this.dir.x + ry * this.dir.y;
         const side = rx * px + ry * py;
         if (along < -0.5 || along > sw.ahead || Math.abs(side - this.off) > sw.side) continue;
+        if (!this.catchable(m) || this.ignore.includes(m.id)) continue;
         const score = Math.abs(side - this.off) + Math.max(0, along) * 0.5;
         if (score < best) {
           best = score;
@@ -549,8 +551,12 @@ class Crosser extends Base<Traveller> {
 
     if (this.held < 0 && !(d.kind === 'snake' && this.caught) && this.vis >= 0.5) {
       for (const m of this.h.marbles) {
+        const hdx = m.x - this.hx;
+        const hdy = m.y - this.hy;
+        const hr = d.size + m.radius;
+        if (hdx > hr || hdx < -hr || hdy > hr || hdy < -hr) continue;
         if (!this.catchable(m) || this.ignore.includes(m.id)) continue;
-        if (Math.hypot(m.x - this.hx, m.y - this.hy) < d.size + m.radius) {
+        if (Math.hypot(hdx, hdy) < hr) {
           const mo = this.mouth();
           this.held = m.id;
           this.heldAt = t;

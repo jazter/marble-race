@@ -22,10 +22,16 @@ export interface Particle {
   text?: string;
 }
 
-const MAX = 1800;
+const MAX = 900;
 
 export class ParticleSystem {
   readonly list: Particle[] = [];
+  /** 0..1: fraction of burst / dust / confetti particles actually spawned (lower on slow devices). */
+  density = 1;
+
+  private count(n: number): number {
+    return this.density >= 1 ? n : Math.max(1, Math.round(n * this.density));
+  }
 
   clear(): void {
     this.list.length = 0;
@@ -71,6 +77,7 @@ export class ParticleSystem {
   }
 
   burst(x: number, y: number, color: string, n: number, speed: number, opts: Partial<Particle> = {}): void {
+    n = this.count(n);
     for (let i = 0; i < n; i++) {
       const a = Math.random() * Math.PI * 2;
       const s = speed * (0.35 + Math.random() * 0.65);
@@ -93,6 +100,7 @@ export class ParticleSystem {
   }
 
   confetti(x: number, y: number, colors: string[], n: number): void {
+    n = this.count(n);
     for (let i = 0; i < n; i++) {
       const a = -Math.PI / 2 + (Math.random() - 0.5) * 2.4;
       const s = 4 + Math.random() * 8;
@@ -125,6 +133,7 @@ export class ParticleSystem {
 
   /** Rising bubble (fish). */
   bubble(x: number, y: number, size: number): void {
+    if (this.density < 1 && Math.random() > this.density) return;
     const life = 0.9 + Math.random() * 0.7;
     this.add({ kind: 'bubble', x, y, vx: (Math.random() - 0.5) * 0.5, vy: -(0.8 + Math.random() * 0.9), life, maxLife: life, size, color: '#bfeaff', rot: Math.random() * 6, vr: 3 + Math.random() * 3 });
   }
@@ -135,6 +144,7 @@ export class ParticleSystem {
   }
 
   dust(x: number, y: number, color: string, n: number, spread: number): void {
+    n = this.count(n);
     for (let i = 0; i < n; i++) {
       const life = 0.6 + Math.random() * 0.6;
       this.add({
@@ -152,8 +162,14 @@ export class ParticleSystem {
     }
   }
 
-  draw(ctx: CanvasRenderingContext2D): void {
+  /**
+   * Draw in world coordinates. `box` (world view rectangle) skips off-screen particles; `pxPerM`
+   * (device px per metre) lets tiny sparks be drawn as squares, much cheaper than arcs.
+   */
+  draw(ctx: CanvasRenderingContext2D, box?: { x0: number; y0: number; x1: number; y1: number }, pxPerM = Infinity): void {
+    const tiny = 2.5 / pxPerM; // radius (m) below which a spark is ~2-3 px: a square looks the same
     for (const p of this.list) {
+      if (box && (p.x < box.x0 - 2 || p.x > box.x1 + 2 || p.y < box.y0 - 2 || p.y > box.y1 + 2)) continue;
       const t = p.life / p.maxLife; // 1 -> 0
       ctx.globalAlpha = Math.max(0, Math.min(1, t * 1.4));
       switch (p.kind) {
@@ -161,8 +177,12 @@ export class ParticleSystem {
         case 'glow':
         case 'dust': {
           ctx.fillStyle = p.color;
-          ctx.beginPath();
           const r = p.kind === 'dust' ? p.size * (1.6 - t * 0.6) : p.size * (0.4 + t * 0.6);
+          if (r < tiny) {
+            ctx.fillRect(p.x - r, p.y - r, r * 2, r * 2);
+            break;
+          }
+          ctx.beginPath();
           ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
           ctx.fill();
           break;

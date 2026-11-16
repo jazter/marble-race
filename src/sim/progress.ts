@@ -1,5 +1,5 @@
 /** Course progress: arc length of the closest point on map.path. */
-import { closestOnSegment, cumulativeLengths } from '../core/math';
+import { cumulativeLengths } from '../core/math';
 import type { Vec } from '../core/types';
 
 export class PathProgress {
@@ -27,18 +27,29 @@ export class PathProgress {
     let best = Infinity;
     let bestS = 0;
     let bestI = 0;
+    const path = this.path;
+    const cum = this.cum;
+    const px = p.x;
+    const py = p.y;
     const scan = (from: number, to: number) => {
       for (let i = from; i < to; i++) {
-        const a = this.path[i];
-        const b = this.path[i + 1];
-        const c = closestOnSegment(p, a, b);
-        const dx = p.x - c.point.x;
-        const dy = p.y - c.point.y;
+        const a = path[i];
+        const b = path[i + 1];
+        const abx = b.x - a.x;
+        const aby = b.y - a.y;
+        const l2 = abx * abx + aby * aby;
+        let t = 0;
+        if (l2 > 0) {
+          t = ((px - a.x) * abx + (py - a.y) * aby) / l2;
+          t = t < 0 ? 0 : t > 1 ? 1 : t;
+        }
+        const dx = px - (a.x + abx * t);
+        const dy = py - (a.y + aby * t);
         const d = dx * dx + dy * dy;
         if (d < best) {
           best = d;
           bestI = i;
-          bestS = this.cum[i] + c.t * (this.cum[i + 1] - this.cum[i]);
+          bestS = cum[i] + t * (cum[i + 1] - cum[i]);
         }
       }
     };

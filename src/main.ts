@@ -532,7 +532,24 @@ function showResult(): void {
  * of stuttering; raise it back when there is plenty of headroom again.
  */
 const QUALITY_LEVELS = [1, 0.75, 0.55];
-let qualityLevel = 0;
+const QUALITY_KEY = 'marble-race:quality';
+/** Remembered between visits, so a slow device starts at the level it ended up at last time. */
+let qualityLevel = ((): number => {
+  try {
+    const v = Number(localStorage.getItem(QUALITY_KEY));
+    return Number.isInteger(v) && v >= 0 && v < QUALITY_LEVELS.length ? v : 0;
+  } catch {
+    return 0;
+  }
+})();
+if (qualityLevel > 0) renderer.setQuality(QUALITY_LEVELS[qualityLevel]);
+function saveQuality(): void {
+  try {
+    localStorage.setItem(QUALITY_KEY, String(qualityLevel));
+  } catch {
+    // storage unavailable (private mode): just don't remember it
+  }
+}
 let frameEma = 1 / 60;
 let slowFor = 0;
 let fastFor = 0;
@@ -550,11 +567,13 @@ function adaptQuality(rawDt: number): void {
     slowFor = 0;
     if (sinceRaise < 8) canRaise = false; // raising made it slow again: stay at this level
     renderer.setQuality(QUALITY_LEVELS[qualityLevel]);
+    saveQuality();
   } else if (canRaise && fastFor > 10 && qualityLevel > 0) {
     qualityLevel--;
     fastFor = 0;
     sinceRaise = 0;
     renderer.setQuality(QUALITY_LEVELS[qualityLevel]);
+    saveQuality();
   }
 }
 
