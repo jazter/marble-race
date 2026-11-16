@@ -2,6 +2,7 @@
  * Canvas 2D renderer for the marble race: course, mechanisms, marbles,
  * particles and minimap. Pure presentation — never feeds back into the sim.
  */
+import { stunnerOn } from '../core/stun';
 import type { BackgroundKind, EffectType, GameConfig, WallReaction } from '../core/config';
 import { BackgroundPainter, scenePalette, type ScenePalette, type SceneKind } from './backgrounds';
 import type { LocalShape, MapDef, MarbleProfile, Monster, StaticShape, Vec, Wall } from '../core/types';
@@ -21,6 +22,8 @@ export const EFFECT_COLORS: Record<EffectType, string> = {
   stun: '#b57cff',
 };
 const STEEL = '#8d98a8';
+/** Colour of a stunner while it is switched off. */
+const STUN_OFF = '#5f5873';
 const FX_COLORS: Record<string, string> = {
   ...EFFECT_COLORS,
   bounce: '#38e07b',
@@ -131,6 +134,8 @@ export class Renderer {
   private flipFx = new Map<string, { active: boolean; trail: number[] }>();
   private particles = new ParticleSystem();
   private clock = 0;
+  /** Time used for the stunners' on/off cycle: sim time in a race, wall clock in the preview. */
+  private stunClock = 0;
   private bgKind: BackgroundKind;
   private bgPainter = new BackgroundPainter();
 
@@ -277,6 +282,7 @@ export class Renderer {
       profile: roster?.[i] ?? { id: i, name: '', skin: { type: 'solid', colors: ['#9aa6b8'] } },
     }));
     this.clock = performance.now() / 1000;
+    this.stunClock = this.clock;
     this.drawScene(view, this.poses0, new Set(), new Map(), placeholders.map((m) => ({ ...m, angle: 0, status: 'waiting' as const, offscreenTime: 0, progress: 0, id: m.profile.id })), null, null);
     this.drawMinimap(placeholders, view.box, false, undefined, null);
   }
@@ -287,6 +293,7 @@ export class Renderer {
   render(sim: Simulation, dt: number, events: readonly SimEvent[] = []): void {
     if (this.map !== sim.map) this.setMap(sim.map);
     this.clock = performance.now() / 1000;
+    this.stunClock = sim.time;
     const cam = sim.getCamera();
     const camView = this.cameraView(cam);
     this.stagingT = this.staging ? 1 : Math.max(0, this.stagingT - dt / 0.8);
@@ -496,7 +503,7 @@ export class Renderer {
     ctx.setLineDash([]);
 
     // zones
-    for (const z of map.zones) this.drawZone(z.shape, z.effect, t);
+    for (const z of map.zones) this.drawZone(z.shape, z.effect, t, z.effect !== 'stun' || this.stunOn(z.id));
 
     // mechanism force fields (under walls)
     map.mechanisms.forEach((m, i) => {
@@ -532,7 +539,7 @@ export class Renderer {
       const r = this.reach[i];
       const pv = p.links[0];
       if (pv.x + r < box.x0 || pv.x - r > box.x1 || pv.y + r < box.y0 || pv.y - r > box.y1) return;
-      const col = m.effect ? EFFECT_COLORS[m.effect] : STEEL;
+      const col = m.effect === 'stun' && !this.stunOn(m.id) ? STUN_OFF : m.effect ? EFFECT_COLORS[m.effect] : STEEL;
       m.links.forEach((link, li) => {
         const lp = p.links[li];
         if (!lp) return;
@@ -646,6 +653,7 @@ export class Renderer {
     const scene = this.scene();
     const theme = scene ?? this.map!.theme;
     const re = this.reactionOf(w);
+    const stunOn = re !== 'stun' || this.stunOn(w.id);
     let fill = theme.wall;
     let edge = scene ? scene.wallEdge : darken(theme.wall, 0.55);
     let glow: string | null = null;
@@ -673,6 +681,12 @@ export class Renderer {
         glow = '#38d6ff';
         break;
       case 'stun': {
+        if (!stunOn) {
+          // switched off: dull grey-violet, no glow, no sparks
+          fill = STUN_OFF;
+          edge = '#2a2438';
+          break;
+        }
         // electric: violet with a crackling yellow flicker
         const k = 0.5 + 0.5 * Math.sin(t * 9 + w.id.length * 1.7);
         fill = mix('#a86bff', '#ffe066', k * 0.35);
@@ -706,7 +720,7 @@ export class Renderer {
       ctx.lineWidth = Math.max(0.06, sh.thickness * 0.28);
       ctx.stroke();
       if (re === 'kill') this.drawLavaSpikes(sh.points, sh.thickness, t);
-      if (re === 'stun') this.drawSparks(sh.points, t, w.id.length);
+      if (re === 'stun' && stunOn) this.drawSparks(sh.points, t, w.id.length);
     } else if (sh.type === 'polygon') {
       pathPoly(ctx, sh.points);
       if (scene) {
@@ -757,7 +771,11 @@ export class Renderer {
       ctx.fill();
     }
     if (re === 'launch' && w.launchDir) this.drawChevrons(sh, w.launchDir, t);
-    if (re === 'stun' && sh.type === 'circle') this.drawStunBolt(sh.center.x, sh.center.y, sh.radius * 0.75);
+    if (re === 'stun' && sh.type === 'circle') this.drawStunBolt(sh.center.x, sh.center.y, sh.radius * 0.75, stunOn);
+  }
+
+  private stunOn(id: string): boolean {
+    return stunnerOn(id, this.stunClock);
   }
 
   /** Zig-zag electric arcs crackling along a 'stun' wall (cosmetic). */
@@ -792,9 +810,9 @@ export class Renderer {
   }
 
   /** Lightning-bolt glyph (stun nubs). */
-  private drawStunBolt(cx: number, cy: number, r: number): void {
+  private drawStunBolt(cx: number, cy: number, r: number, on = true): void {
     const ctx = this.ctx;
-    ctx.fillStyle = '#fff3a0';
+    ctx.fillStyle = on ? '#fff3a0' : '#8f8aa0';
     ctx.strokeStyle = '#3b1a73';
     ctx.lineWidth = 0.05;
     ctx.beginPath();
@@ -1143,13 +1161,13 @@ export class Renderer {
     ctx.stroke();
   }
 
-  private drawZone(sh: { type: 'circle'; center: Vec; radius: number } | { type: 'polygon'; points: Vec[] }, effect: EffectType, t: number): void {
+  private drawZone(sh: { type: 'circle'; center: Vec; radius: number } | { type: 'polygon'; points: Vec[] }, effect: EffectType, t: number, on = true): void {
     if (effect === 'stun' && sh.type === 'circle') {
-      this.drawTesla(sh.center, sh.radius, t);
+      this.drawTesla(sh.center, sh.radius, t, on);
       return;
     }
     const ctx = this.ctx;
-    const col = EFFECT_COLORS[effect];
+    const col = effect === 'stun' && !on ? STUN_OFF : EFFECT_COLORS[effect];
     const pulse = 0.5 + 0.5 * Math.sin(t * 3);
     ctx.beginPath();
     let c: Vec;
@@ -1177,26 +1195,26 @@ export class Renderer {
   }
 
   /** Tesla coil: a metal electrode orb with crackling arcs filling its (dazing) field. */
-  private drawTesla(c: Vec, r: number, t: number): void {
+  private drawTesla(c: Vec, r: number, t: number, on = true): void {
     const ctx = this.ctx;
-    const col = EFFECT_COLORS.stun;
-    const pulse = 0.5 + 0.5 * Math.sin(t * 6);
+    const col = on ? EFFECT_COLORS.stun : STUN_OFF;
+    const pulse = on ? 0.5 + 0.5 * Math.sin(t * 6) : 0;
     ctx.save();
-    // field
+    // field (barely visible while the coil is switched off)
     const g = ctx.createRadialGradient(c.x, c.y, r * 0.1, c.x, c.y, r);
-    g.addColorStop(0, alpha(col, 0.32 + 0.1 * pulse));
-    g.addColorStop(1, alpha(col, 0.05));
+    g.addColorStop(0, alpha(col, on ? 0.32 + 0.1 * pulse : 0.12));
+    g.addColorStop(1, alpha(col, on ? 0.05 : 0.02));
     ctx.fillStyle = g;
     ctx.beginPath();
     ctx.arc(c.x, c.y, r, 0, Math.PI * 2);
     ctx.fill();
-    ctx.strokeStyle = alpha(col, 0.7);
+    ctx.strokeStyle = alpha(col, on ? 0.7 : 0.4);
     ctx.lineWidth = 0.07;
     ctx.setLineDash([0.25, 0.2]);
-    ctx.lineDashOffset = -t * 1.2;
+    ctx.lineDashOffset = on ? -t * 1.2 : 0;
     ctx.stroke();
     ctx.setLineDash([]);
-    // arcs: re-rolled ~12 times per second
+    // arcs: re-rolled ~12 times per second (none while off)
     const roll = Math.floor(t * 12) + Math.floor(c.x * 13 + c.y * 7);
     const rnd = (k: number): number => {
       const v = Math.sin((roll + k) * 12.9898 + k * 78.233) * 43758.5453;
@@ -1204,7 +1222,7 @@ export class Renderer {
     };
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
-    for (let a = 0; a < 5; a++) {
+    for (let a = 0; a < (on ? 5 : 0); a++) {
       const ang = rnd(a * 17) * Math.PI * 2;
       const len = r * (0.65 + 0.35 * rnd(a * 17 + 1));
       const steps = 6;

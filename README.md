@@ -54,7 +54,7 @@ Todas las opciones están en el panel lateral (⚙ en móvil). *Restablecer valo
 |---|---|
 | Reacción de paredes exteriores | Mixta: cada tramo con su propia reacción (sobre todo sólida, con rebote, lenta, lanzadores que empujan a favor del recorrido y, muy rara vez, tramos cortos que aturden; nunca dos seguidos ni donde se apoyan las rampas). También: sólida, rebote, lenta, aturdir, eliminar, lanzar |
 | Tipos de paredes especiales | Rebote, lenta, **aturdir** y lanzar (eliminar existe pero viene apagado) |
-| Aturdimiento | 1.2 s: la canica que toca una pared o punto de aturdir pierde casi toda su velocidad y flota con estrellitas antes de seguir; no se elimina |
+| Aturdimiento | 1.2 s: la canica que toca una pared o punto de aturdir pierde casi toda su velocidad y flota con estrellitas antes de seguir; no se elimina. Todos los aturdidores (paredes, puntos, bobinas y mecanismos) se **encienden 1 s y se apagan 1 s**, cada uno a su propio ritmo; apagados se ven grises y no aturden |
 | Proporción de especiales | 25 % |
 | Rebote / lentitud / lanzamiento | 1.1 / 85 % / 12 m/s |
 
@@ -66,7 +66,7 @@ Todas las opciones están en el panel lateral (⚙ en móvil). *Restablecer valo
 |---|---|
 | Mecanismos | Hélice, brazo doble, sierra, triángulo, martillo y paletas de pinball (se activan al tocarlas y lanzan la canica hacia arriba; ignoran la velocidad de objetos y los efectos de interruptor) |
 | Efectos | Agrandar, achicar, destruir, atraer, repeler y **aturdir** (todos). Los mecanismos con «aturdir» se ven violetas y aturden al tocarlos |
-| Bobinas de Tesla | Con «aturdir» y zonas activas: orbes eléctricos colgados en los huecos de algunas rampas (y en tramos de zonas) que aturden a toda canica que pasa por su campo |
+| Bobinas de Tesla | Con «aturdir» y zonas activas: orbes eléctricos colgados en los huecos de algunas rampas (y en tramos de zonas) que aturden a las canicas que están en su campo mientras están encendidos (al encenderse también aturden a las que ya estaban dentro) |
 | Densidad / velocidad | 50 % / 1× |
 | Probabilidad de efecto | 60 % |
 | Zonas con efecto | Activas |

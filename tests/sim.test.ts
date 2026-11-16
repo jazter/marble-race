@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { GameConfig } from '../src/core/config';
 import { sampleConfig, sampleMap, sampleRoster } from '../src/core/fixtures';
 import type { MapDef, Wall } from '../src/core/types';
+import { STUN_OFF_SECONDS, STUN_ON_SECONDS, stunnerOn } from '../src/core/stun';
 import { createSimulation, type SimEvent, type Simulation } from '../src/sim';
 
 function snapshot(sim: Simulation): string {
@@ -463,5 +464,101 @@ describe('stun walls', () => {
     expect(stunEvent && stunnedSeen && recovered).toBe(true);
     expect(m.eliminatedReason).not.toBe('wall');
     sim.destroy();
+  });
+});
+
+describe('stunners switch on and off', () => {
+  it('each stunner is on 1 s, off 1 s, with its own phase', () => {
+    expect(STUN_ON_SECONDS).toBe(1);
+    expect(STUN_OFF_SECONDS).toBe(1);
+    const ids = ['w1', 'w2', 'tesla-3', 'mech-7', 'ramp1'];
+    const phases = new Set<number>();
+    for (const id of ids) {
+      let on = 0;
+      let firstOn = -1;
+      const N = 2000;
+      for (let i = 0; i < N; i++) {
+        const t = (i / N) * 20;
+        if (stunnerOn(id, t)) {
+          on++;
+          if (firstOn < 0) firstOn = t;
+        }
+      }
+      expect(on / N).toBeGreaterThan(0.48);
+      expect(on / N).toBeLessThan(0.52);
+      phases.add(Math.round(firstOn * 10));
+      // one full on-stretch lasts ~1 s
+      let t = 0;
+      while (stunnerOn(id, t)) t += 0.001; // skip a stretch already running at t=0
+      while (!stunnerOn(id, t)) t += 0.001;
+      const start = t;
+      while (stunnerOn(id, t)) t += 0.001;
+      expect(t - start).toBeCloseTo(1, 2);
+    }
+    expect(phases.size).toBeGreaterThan(2); // not all in sync
+  });
+
+  /** tiny() with the finish moved further down, so a floor at y=70 is reached after the countdown. */
+  function deep(): MapDef {
+    return { ...tiny(), finish: { a: { x: -5, y: 110 }, b: { x: 5, y: 110 }, sensor: [] } };
+  }
+
+  /** Time the marble of deep() first touches a solid floor at y=70 (while racing). */
+  function touchTime(): number {
+    const map = deep();
+    map.walls = [floor(70)];
+    const sim = createSimulation(map, sampleRoster(1), sampleConfig(1));
+    let t = -1;
+    while (sim.time < 10 && t < 0) {
+      sim.step();
+      const m = sim.getMarbles()[0];
+      if (m.status === 'racing' && m.y > 70 - 0.2 - m.radius - 0.05) t = sim.time;
+    }
+    sim.destroy();
+    return t;
+  }
+
+  function stunEventsWith(map: MapDef, seconds: number): number[] {
+    const cfg = sampleConfig(1);
+    cfg.race.unstuck = false;
+    const sim = createSimulation(map, sampleRoster(1), cfg);
+    const at: number[] = [];
+    while (!sim.isOver() && sim.time < seconds) {
+      sim.step();
+      for (const e of sim.drainEvents()) if (e.type === 'effect' && e.effect === 'stun') at.push(e.t);
+    }
+    sim.destroy();
+    return at;
+  }
+
+  it('a stun wall only dazes a marble that touches it while it is on', () => {
+    const t0 = touchTime();
+    expect(t0).toBeGreaterThan(0);
+    const pick = (wantOn: boolean): string => {
+      for (let i = 0; i < 200; i++) {
+        const id = `floor${i}`;
+        // stay clear of the switching edges around the touch moment
+        if ([-0.15, 0, 0.15].every((d) => stunnerOn(id, t0 + d) === wantOn)) return id;
+      }
+      throw new Error('no id');
+    };
+    const offMap = deep();
+    offMap.walls = [floor(70, 'stun', { id: pick(false) })];
+    const onMap = deep();
+    onMap.walls = [floor(70, 'stun', { id: pick(true) })];
+    const offStuns = stunEventsWith(offMap, t0 + 0.5);
+    const onStuns = stunEventsWith(onMap, t0 + 0.5);
+    expect(offStuns).toHaveLength(0);
+    expect(onStuns.length).toBeGreaterThan(0);
+  });
+
+  it('a Tesla coil zaps marbles inside it only while on, again each time it switches on', () => {
+    const map = tiny();
+    map.walls = [floor(10)];
+    map.zones = [{ id: 'tesla-x', shape: { type: 'circle', center: { x: 0, y: 9 }, radius: 3 }, effect: 'stun', strength: 0 }];
+    const at = stunEventsWith(map, 16);
+    expect(at.length).toBeGreaterThan(2); // the marble sitting in the coil is zapped repeatedly
+    for (const t of at) expect(stunnerOn('tesla-x', t)).toBe(true);
+    for (let i = 1; i < at.length; i++) expect(at[i] - at[i - 1]).toBeGreaterThan(1.9); // not while it's off
   });
 });

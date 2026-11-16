@@ -8,6 +8,7 @@
 import { Circle, Vec2, World, type Body, type Contact, type Fixture } from 'planck';
 import { SIM_DT, type EffectType, type GameConfig, type WallReaction } from '../core/config';
 import { cross, pointAtLength, pointInPolygon } from '../core/math';
+import { stunnerOn } from '../core/stun';
 import { Rng } from '../core/rng';
 import type { MapDef, MarbleProfile } from '../core/types';
 import type {
@@ -102,6 +103,8 @@ class SimImpl implements Simulation {
   private stunUntil: number[] = [];
   /** Sim time a marble's last stun ended (stun cooldown, so it isn't chain-stunned). */
   private stunEnded: number[] = [];
+  /** Marbles currently inside each stun zone (Tesla coil), by zone index. */
+  private stunZoneInside = new Map<number, Set<number>>();
   private hist: number[][] = [];
 
   private wallReaction: WallReaction[] = [];
@@ -465,7 +468,8 @@ class SimImpl implements Simulation {
     m.radius = r;
   }
 
-  private applyObjectEffect(m: MarbleState, effect: EffectType | null, strength: number | null, key: number): void {
+  private applyObjectEffect(m: MarbleState, effect: EffectType | null, strength: number | null, key: number, sourceId?: string): void {
+    if (effect === 'stun' && sourceId !== undefined && !stunnerOn(sourceId, this.time)) return; // switched off right now
     if (!effect || (effect !== 'grow' && effect !== 'shrink' && effect !== 'destroy' && effect !== 'stun')) return;
     if (!this.fxCooldownOk(key, m.id, EFFECT_COOLDOWN)) return;
     if (effect === 'stun') {
@@ -612,6 +616,7 @@ class SimImpl implements Simulation {
 
     this.syncMarbles();
     this.processContacts();
+    this.processStunZones();
     this.processStun();
     this.updateSwitchTimers();
     this.processFinish();
@@ -702,7 +707,7 @@ class SimImpl implements Simulation {
         } else if (reaction === 'kill') {
           this.eliminate(m, 'wall');
         } else if (reaction === 'stun') {
-          this.stun(m);
+          if (stunnerOn(this.map.walls[r.idx].id, this.time)) this.stun(m);
         } else if (reaction === 'launch') {
           if (!this.fxCooldownOk(this.keyOfWall[r.idx], m.id, LAUNCH_COOLDOWN)) continue;
           const wall = this.map.walls[r.idx];
@@ -722,9 +727,15 @@ class SimImpl implements Simulation {
           body.setLinearVelocity(new Vec2(v.x + dx * s, v.y + dy * s));
           this.emit({ t: this.time, type: 'effect', marbleId: m.id, effect: 'launch', x: m.x, y: m.y });
         }
+      } else if (r.kind === K_ZONE && this.zoneEffects[r.idx].effect === 'stun') {
+        // Tesla coils: remember who is inside; processStunZones zaps them while the coil is on
+        let set = this.stunZoneInside.get(r.idx);
+        if (!set) this.stunZoneInside.set(r.idx, (set = new Set()));
+        if (r.begin) set.add(m.id);
+        else set.delete(m.id);
       } else if (r.begin && m.status === 'racing' && m.heldBy === undefined) {
         if (r.kind === K_MECH) {
-          this.applyObjectEffect(m, this.mechs[r.idx].def.effect, null, this.keyOfMech[r.idx]);
+          this.applyObjectEffect(m, this.mechs[r.idx].def.effect, null, this.keyOfMech[r.idx], this.mechs[r.idx].def.id);
         } else if (r.kind === K_ZONE) {
           const z = this.zoneEffects[r.idx];
           this.applyObjectEffect(m, z.effect, z.strength, this.keyOfZone[r.idx]);
@@ -840,6 +851,25 @@ class SimImpl implements Simulation {
     body.setLinearDamping(6);
     m.stunned = this.config.walls.stunTime;
     this.emit({ t: this.time, type: 'effect', marbleId: m.id, effect: 'stun', x: m.x, y: m.y });
+  }
+
+  private processStunZones(): void {
+    if (this.stunZoneInside.size === 0) return;
+    for (const [idx, set] of this.stunZoneInside) {
+      const zone = this.map.zones[idx];
+      if (set.size === 0 || !stunnerOn(zone.id, this.time)) continue;
+      for (const id of set) {
+        const m = this.marbles[id];
+        if (!m || m.status !== 'racing' || m.heldBy !== undefined) continue;
+        if (zone.shape.type === 'circle') {
+          // guard against a stale membership (fixture rebuilt by grow/shrink)
+          const c = zone.shape.center;
+          const rr = zone.shape.radius + m.radius;
+          if ((m.x - c.x) ** 2 + (m.y - c.y) ** 2 > rr * rr) continue;
+        }
+        this.stun(m);
+      }
+    }
   }
 
   private processStun(): void {
