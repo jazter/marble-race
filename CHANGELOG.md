@@ -9,6 +9,14 @@ paréntesis, el commit correspondiente.
 ## 2026-11-16 — Rendimiento, aturdidores y reagrupaciones
 
 ### Cambiado
+- **Cámara 15 % más arriba** en pantallas verticales (8 % en horizontales, que son bajas y tienen
+  la barra de controles abajo): el líder queda más abajo en la pantalla y se ven las canicas que
+  vienen atrás.
+- **Controles en teléfonos**: la barra de controles, la clasificación, el marcador, el minimapa y
+  los avisos respetan las zonas seguras de la pantalla (barra de gestos de Android de borde a
+  borde, muesca, esquinas redondeadas); antes la barra de controles quedaba tapada abajo. En
+  pantallas muy angostas la barra se compacta para caber en una línea (≤ 340 px oculta 0,3×) y
+  las etiquetas del marcador se recortan en vez de partirse.
 - **Hélices de reagrupación tan rápidas como los demás mecanismos**: ~1,9 rad/s en el embudo con
   hélice y ~1,5 rad/s en la cámara circular (antes ~1 rad/s, una vuelta cada ~6 s). Se verificó en
   el navegador que el giro dibujado y el del cuerpo físico coinciden con la velocidad definida;

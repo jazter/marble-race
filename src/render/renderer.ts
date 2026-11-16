@@ -23,6 +23,9 @@ export const EFFECT_COLORS: Record<EffectType, string> = {
   stun: '#b57cff',
 };
 const STEEL = '#8d98a8';
+/** Fraction of the visible view the race camera is shifted back (uphill) from its target. */
+const CAMERA_BACK = 0.15;
+const CAMERA_BACK_LANDSCAPE = 0.08;
 /** Colour of a stunner while it is switched off. */
 const STUN_OFF = '#5f5873';
 const FX_COLORS: Record<string, string> = {
@@ -347,7 +350,16 @@ export class Renderer {
 
   private cameraView(cam: CameraState): View {
     const s = Math.min(this.W / cam.width, this.H / cam.height);
-    return this.makeView(s, cam.x, cam.y);
+    // Show more of the course behind the leader: the view sits CAMERA_BACK of its extent further
+    // "uphill" (against the course flow), so the marbles coming behind stay in sight.
+    const f = this.map?.flowDir ?? { x: 0, y: 1 };
+    const fl = Math.hypot(f.x, f.y) || 1;
+    const fx = f.x / fl;
+    const fy = f.y / fl;
+    // (landscape screens are short and the control bar covers their bottom: shift less there)
+    const frac = this.H >= this.W ? CAMERA_BACK : CAMERA_BACK_LANDSCAPE;
+    const back = frac * (Math.abs(fx) * (this.W / s) + Math.abs(fy) * (this.H / s));
+    return this.makeView(s, cam.x - fx * back, cam.y - fy * back);
   }
 
   /** Fit the start box (area + spawn points) into the canvas minus the staging panel. */
