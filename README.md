@@ -2,6 +2,8 @@
 
 Carreras de canicas procedurales en el navegador, al estilo de los *marble races* de Algodoo. Cada mapa aleatorio se simula antes de mostrarse para garantizar que al menos una canica puede llegar a la meta.
 
+Juega en <https://jazter.github.io/marble-race/> · Historial de cambios: [CHANGELOG.md](CHANGELOG.md)
+
 ## Cómo jugar
 
 1. **Generar un mapa**: pulsa *🎲 Generar mapa*. El juego crea el recorrido a partir de una semilla.
