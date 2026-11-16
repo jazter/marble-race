@@ -576,8 +576,9 @@ function capEnd(ctx: Ctx, p: Vec): void {
 }
 
 function regroupSpeed(ctx: Ctx): number {
-  // brisk enough that a full field of marbles doesn't queue for ages (more survive since stun replaced kill)
-  return 1.55 * (0.5 + 0.5 * ctx.diff) * ctx.rng.range(0.9, 1.1);
+  // about as lively as the other mechanisms (~1.9 rad/s at the default difficulty; the round chamber
+  // turns at 3/4 of it so it still carries marbles round to its exit)
+  return 2.6 * (0.5 + 0.5 * ctx.diff) * ctx.rng.range(0.9, 1.1);
 }
 
 function addRotor(ctx: Ctx, x: number, y: number, L: number, blades: number, speed: number): void {
