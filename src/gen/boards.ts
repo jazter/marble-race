@@ -201,8 +201,10 @@ export function fillLane(ctx: Ctx, lane: Lane, style: LaneStyle, variant: number
           const cnt = i % 2 === 0 ? m : m - 1;
           for (let j = 0; j < cnt; j++) {
             const x = (lane.xa + lane.xb) / 2 + (j - (cnt - 1) / 2) * (c / m);
-            if (bump) nub(ctx, { ...lane, xa: x, xb: x }, -1, y, 0.65, true);
-            else nub(ctx, { ...lane, xa: x, xb: x }, -1, y, 0.35, false);
+            const rad = bump ? 0.65 : 0.35;
+            // never leave a gap to the lane wall that a (grown) marble can wedge into
+            if (Math.min(x - lane.xa, lane.xb - x) - rad < passMin(ctx)) continue;
+            nub(ctx, { ...lane, xa: x, xb: x }, -1, y, rad, bump);
           }
         }
         break;

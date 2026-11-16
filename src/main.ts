@@ -526,14 +526,49 @@ function showResult(): void {
 
 /* ------------------------------------------------------------- loop */
 
+/**
+ * Adaptive resolution: on a device that can't draw the race at a decent frame rate (slow
+ * tablets / phones with very dense screens), lower the canvas resolution step by step instead
+ * of stuttering; raise it back when there is plenty of headroom again.
+ */
+const QUALITY_LEVELS = [1, 0.75, 0.55];
+let qualityLevel = 0;
+let frameEma = 1 / 60;
+let slowFor = 0;
+let fastFor = 0;
+let sinceRaise = Infinity;
+let canRaise = true;
+function adaptQuality(rawDt: number): void {
+  if (rawDt > 0.5) return; // tab was hidden / debugger: not a real frame
+  frameEma += (rawDt - frameEma) * 0.08;
+  sinceRaise += rawDt;
+  // below ~28 fps (a screen capped at 30 fps, e.g. battery saver, does not count as slow)
+  slowFor = frameEma > 1 / 28 ? slowFor + rawDt : 0;
+  fastFor = frameEma < 1 / 50 ? fastFor + rawDt : 0;
+  if (slowFor > 1.5 && qualityLevel < QUALITY_LEVELS.length - 1) {
+    qualityLevel++;
+    slowFor = 0;
+    if (sinceRaise < 8) canRaise = false; // raising made it slow again: stay at this level
+    renderer.setQuality(QUALITY_LEVELS[qualityLevel]);
+  } else if (canRaise && fastFor > 10 && qualityLevel > 0) {
+    qualityLevel--;
+    fastFor = 0;
+    sinceRaise = 0;
+    renderer.setQuality(QUALITY_LEVELS[qualityLevel]);
+  }
+}
+
 let last = performance.now();
 function frame(now: number): void {
-  const dt = Math.min(0.1, (now - last) / 1000);
+  const rawDt = (now - last) / 1000;
+  // up to 0.25 s of simulation per frame: a slow frame skips ahead instead of turning the race into slow motion
+  const dt = Math.min(0.25, rawDt);
   last = now;
   if (mode === 'race' && sim && hud) {
     if (staging) {
       // not stepped: marbles wait at their spawn points
     } else if (!paused && !sim.isOver()) {
+      adaptQuality(rawDt);
       // the countdown always runs at 1x real time; the chosen speed applies afterwards
       const inCountdown = sim.time < sim.config.race.countdown - 1e-9;
       acc += dt * (inCountdown ? 1 : speed);

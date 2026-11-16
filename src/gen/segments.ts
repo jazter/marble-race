@@ -574,7 +574,8 @@ function capEnd(ctx: Ctx, p: Vec): void {
 }
 
 function regroupSpeed(ctx: Ctx): number {
-  return (0.5 + 0.5 * ctx.diff) * ctx.rng.range(0.9, 1.1);
+  // brisk enough that a full field of marbles doesn't queue for ages (more survive since stun replaced kill)
+  return 1.35 * (0.5 + 0.5 * ctx.diff) * ctx.rng.range(0.9, 1.1);
 }
 
 function addRotor(ctx: Ctx, x: number, y: number, L: number, blades: number, speed: number): void {

@@ -116,6 +116,7 @@ export class Renderer {
   private miniOrigin: Vec = { x: 0, y: 0 };
 
   private dpr = 1;
+  private qualityScale = 1;
   private W = 1;
   private H = 1;
 
@@ -183,8 +184,23 @@ export class Renderer {
 
   /* ------------------------------------------------------------ setup */
 
+  /**
+   * Render resolution as a fraction of the device pixel ratio (1 = sharpest). Lowered by the
+   * game loop on devices that can't keep up, so the race stays smooth instead of stuttering.
+   */
+  get quality(): number {
+    return this.qualityScale;
+  }
+
+  setQuality(q: number): void {
+    const v = Math.max(0.4, Math.min(1, q));
+    if (v === this.qualityScale) return;
+    this.qualityScale = v;
+    this.resize();
+  }
+
   resize(): void {
-    this.dpr = Math.min(window.devicePixelRatio || 1, 2.5);
+    this.dpr = Math.max(0.75, Math.min(window.devicePixelRatio || 1, 2.5) * this.qualityScale);
     const w = Math.max(1, Math.round(this.canvas.clientWidth * this.dpr));
     const h = Math.max(1, Math.round(this.canvas.clientHeight * this.dpr));
     if (w !== this.canvas.width || h !== this.canvas.height) {
