@@ -268,7 +268,7 @@ export function baseSpeed(ctx: Ctx): number {
 
 function enabledEffects(ctx: Ctx): EffectType[] {
   const e = ctx.cfg.objects.effects;
-  return (['grow', 'shrink', 'destroy', 'attract', 'repel'] as EffectType[]).filter((k) => e[k]);
+  return (['grow', 'shrink', 'destroy', 'attract', 'repel', 'stun'] as EffectType[]).filter((k) => e[k]);
 }
 
 export function pickEffect(ctx: Ctx, kind: MechanismKind): EffectType | null {
@@ -425,4 +425,12 @@ export function makeFlipper(ctx: Ctx, pivot: Vec, o: FlipperOpts): Mechanism {
   };
   ctx.mechs.push(m);
   return m;
+}
+
+/**
+ * Tesla coil ("bobina de Tesla"): an electrified orb hanging in the air that dazes ('stun')
+ * every marble passing through its field. Static sensor zone; nothing to collide with.
+ */
+export function addTeslaCoil(ctx: Ctx, center: Vec, radius: number): void {
+  ctx.zones.push({ id: nid(ctx, 'tesla'), shape: { type: 'circle', center, radius }, effect: 'stun', strength: 0 });
 }

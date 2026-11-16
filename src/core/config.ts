@@ -21,7 +21,7 @@ export type SpecialWallReaction = Exclude<WallReaction, 'solid'>;
 export type BoundaryMode = WallReaction | 'mixed';
 
 /** Effects that modifier objects (mechanisms and zones) apply to marbles. */
-export type EffectType = 'grow' | 'shrink' | 'destroy' | 'attract' | 'repel';
+export type EffectType = 'grow' | 'shrink' | 'destroy' | 'attract' | 'repel' | 'stun';
 
 /** Moving obstacle families. Each has one or more pivot points (links). */
 export type MechanismKind =
@@ -235,7 +235,7 @@ export function defaultConfig(): GameConfig {
     },
     objects: {
       kinds: { propeller: true, arm2: true, saw: true, triangle: true, hammer: true, flipper: true },
-      effects: { grow: true, shrink: true, destroy: true, attract: true, repel: true },
+      effects: { grow: true, shrink: true, destroy: true, attract: true, repel: true, stun: true },
       density: 0.5,
       speed: 1,
       effectChance: 0.6,

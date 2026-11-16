@@ -152,6 +152,7 @@ export const SECTIONS: Section[] = [
           ['destroy', 'Destruir'],
           ['attract', 'Atraer'],
           ['repel', 'Repeler'],
+          ['stun', 'Aturdir'],
         ],
       },
       { kind: 'range', label: 'Densidad de objetos', path: 'objects.density', min: 0, max: 1, step: 0.01, percent: true },

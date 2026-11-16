@@ -466,8 +466,12 @@ class SimImpl implements Simulation {
   }
 
   private applyObjectEffect(m: MarbleState, effect: EffectType | null, strength: number | null, key: number): void {
-    if (!effect || (effect !== 'grow' && effect !== 'shrink' && effect !== 'destroy')) return;
+    if (!effect || (effect !== 'grow' && effect !== 'shrink' && effect !== 'destroy' && effect !== 'stun')) return;
     if (!this.fxCooldownOk(key, m.id, EFFECT_COOLDOWN)) return;
+    if (effect === 'stun') {
+      this.stun(m); // Tesla coils and electrified mechanisms daze the marble
+      return;
+    }
     const mc = this.config.marbles;
     if (effect === 'destroy') {
       this.emit({ t: this.time, type: 'effect', marbleId: m.id, effect, x: m.x, y: m.y });

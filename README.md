@@ -65,7 +65,8 @@ Todas las opciones están en el panel lateral (⚙ en móvil). *Restablecer valo
 | Opción | Por defecto |
 |---|---|
 | Mecanismos | Hélice, brazo doble, sierra, triángulo, martillo y paletas de pinball (se activan al tocarlas y lanzan la canica hacia arriba; ignoran la velocidad de objetos y los efectos de interruptor) |
-| Efectos | Agrandar, achicar, destruir, atraer, repeler (todos) |
+| Efectos | Agrandar, achicar, destruir, atraer, repeler y **aturdir** (todos). Los mecanismos con «aturdir» se ven violetas y aturden al tocarlos |
+| Bobinas de Tesla | Con «aturdir» y zonas activas: orbes eléctricos colgados en los huecos de algunas rampas (y en tramos de zonas) que aturden a toda canica que pasa por su campo |
 | Densidad / velocidad | 50 % / 1× |
 | Probabilidad de efecto | 60 % |
 | Zonas con efecto | Activas |

@@ -18,6 +18,7 @@ export const EFFECT_COLORS: Record<EffectType, string> = {
   destroy: '#ff4747',
   attract: '#4aa3ff',
   repel: '#ff8a2a',
+  stun: '#b57cff',
 };
 const STEEL = '#8d98a8';
 const FX_COLORS: Record<string, string> = {
@@ -1143,6 +1144,10 @@ export class Renderer {
   }
 
   private drawZone(sh: { type: 'circle'; center: Vec; radius: number } | { type: 'polygon'; points: Vec[] }, effect: EffectType, t: number): void {
+    if (effect === 'stun' && sh.type === 'circle') {
+      this.drawTesla(sh.center, sh.radius, t);
+      return;
+    }
     const ctx = this.ctx;
     const col = EFFECT_COLORS[effect];
     const pulse = 0.5 + 0.5 * Math.sin(t * 3);
@@ -1169,6 +1174,71 @@ export class Renderer {
     ctx.setLineDash([]);
     ctx.lineDashOffset = 0;
     drawGlyph(ctx, effect, c.x, c.y, Math.min(r * 0.55, 1.1), alpha(lighten(col, 0.5), 0.95));
+  }
+
+  /** Tesla coil: a metal electrode orb with crackling arcs filling its (dazing) field. */
+  private drawTesla(c: Vec, r: number, t: number): void {
+    const ctx = this.ctx;
+    const col = EFFECT_COLORS.stun;
+    const pulse = 0.5 + 0.5 * Math.sin(t * 6);
+    ctx.save();
+    // field
+    const g = ctx.createRadialGradient(c.x, c.y, r * 0.1, c.x, c.y, r);
+    g.addColorStop(0, alpha(col, 0.32 + 0.1 * pulse));
+    g.addColorStop(1, alpha(col, 0.05));
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(c.x, c.y, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = alpha(col, 0.7);
+    ctx.lineWidth = 0.07;
+    ctx.setLineDash([0.25, 0.2]);
+    ctx.lineDashOffset = -t * 1.2;
+    ctx.stroke();
+    ctx.setLineDash([]);
+    // arcs: re-rolled ~12 times per second
+    const roll = Math.floor(t * 12) + Math.floor(c.x * 13 + c.y * 7);
+    const rnd = (k: number): number => {
+      const v = Math.sin((roll + k) * 12.9898 + k * 78.233) * 43758.5453;
+      return v - Math.floor(v);
+    };
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    for (let a = 0; a < 5; a++) {
+      const ang = rnd(a * 17) * Math.PI * 2;
+      const len = r * (0.65 + 0.35 * rnd(a * 17 + 1));
+      const steps = 6;
+      ctx.strokeStyle = a % 2 === 0 ? 'rgba(255,240,160,0.95)' : alpha(lighten(col, 0.4), 0.9);
+      ctx.lineWidth = a % 2 === 0 ? 0.06 : 0.04;
+      ctx.beginPath();
+      ctx.moveTo(c.x, c.y);
+      for (let k = 1; k <= steps; k++) {
+        const f = k / steps;
+        const jit = k === steps ? 0 : (rnd(a * 17 + k * 3) - 0.5) * r * 0.35;
+        const px = c.x + Math.cos(ang) * len * f - Math.sin(ang) * jit;
+        const py = c.y + Math.sin(ang) * len * f + Math.cos(ang) * jit;
+        ctx.lineTo(px, py);
+      }
+      ctx.stroke();
+    }
+    // electrode orb
+    const er = Math.min(0.5, r * 0.32);
+    const og = ctx.createRadialGradient(c.x - er * 0.35, c.y - er * 0.35, er * 0.1, c.x, c.y, er);
+    og.addColorStop(0, '#f4f0ff');
+    og.addColorStop(0.45, '#9aa3b8');
+    og.addColorStop(1, '#3a3f52');
+    ctx.fillStyle = alpha(col, 0.35 + 0.25 * pulse);
+    ctx.beginPath();
+    ctx.arc(c.x, c.y, er * 1.6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = og;
+    ctx.strokeStyle = '#2a1a4a';
+    ctx.lineWidth = 0.05;
+    ctx.beginPath();
+    ctx.arc(c.x, c.y, er, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
   }
 
   private drawFinish(map: MapDef): void {
@@ -1620,6 +1690,18 @@ export function drawGlyph(ctx: CanvasRenderingContext2D, effect: EffectType, x: 
       break;
     case 'destroy':
       drawSkull(ctx, x, y, r * 0.95, color, 'rgba(20,0,0,0.85)');
+      break;
+    case 'stun':
+      // lightning bolt
+      ctx.beginPath();
+      ctx.moveTo(x + r * 0.15, y - r);
+      ctx.lineTo(x - r * 0.45, y + r * 0.1);
+      ctx.lineTo(x - r * 0.02, y + r * 0.1);
+      ctx.lineTo(x - r * 0.2, y + r);
+      ctx.lineTo(x + r * 0.45, y - r * 0.15);
+      ctx.lineTo(x + r * 0.02, y - r * 0.15);
+      ctx.closePath();
+      ctx.fill();
       break;
     case 'attract': {
       ctx.lineWidth = r * 0.42;

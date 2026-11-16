@@ -26,7 +26,9 @@ import {
   sweeperXs,
   kindEnabled,
   makeFlipper,
+  addTeslaCoil,
 } from './util';
+import { Rng } from '../core/rng';
 import { galton, galtonAvailable, lanes, lanesAvailable } from './boards';
 import { gableAvailable, gableSplit, pinball, pinballAvailable } from './pinball';
 
@@ -93,7 +95,16 @@ function zigzagRamps(ctx: Ctx, n: number, flippers = false): Ramp[] {
 }
 
 function zigzag(ctx: Ctx): void {
-  zigzagRamps(ctx, ctx.rng.int(4, 6), true);
+  const ramps = zigzagRamps(ctx, ctx.rng.int(4, 6), true);
+  // Tesla coils: now and then an electrified orb hangs in a ramp's gap column, dazing the
+  // marbles that drop through (separate Rng so the course itself doesn't change)
+  if (!ctx.cfg.objects.effects.stun || !ctx.cfg.objects.zones) return;
+  const trng = new Rng(Math.floor(ctx.rng.next() * 4294967296) ^ 0x7e51a);
+  ramps.forEach((rp, i) => {
+    if (i === ramps.length - 1 || !trng.bool(0.28)) return;
+    const side = rp.b.x > ctx.cx ? 1 : -1;
+    addTeslaCoil(ctx, { x: rp.b.x + side * 1.6, y: rp.b.y + 1.0 }, trng.range(1.2, 1.6));
+  });
 }
 
 /* ----------------------------------------------------------------- funnel */
@@ -360,9 +371,10 @@ function pads(ctx: Ctx): void {
   const gp: ('grow' | 'shrink')[] = [];
   if (eff.grow) gp.push('grow');
   if (eff.shrink) gp.push('shrink');
-  const orbs: ('attract' | 'repel')[] = [];
+  const orbs: ('attract' | 'repel' | 'stun')[] = [];
   if (eff.attract) orbs.push('attract');
   if (eff.repel) orbs.push('repel');
+  if (eff.stun) orbs.push('stun');
   ramps.forEach((rp, i) => {
     const L = dist(rp.a, rp.b);
     const d = { x: (rp.b.x - rp.a.x) / L, y: (rp.b.y - rp.a.y) / L };
@@ -386,6 +398,10 @@ function pads(ctx: Ctx): void {
       const radius = rng.range(2, 3.2);
       // orb in the air at the gap column of this ramp
       const gx = rp.b.x + (rp.b.x > ctx.cx ? 1 : -1) * 1.6;
+      if (effect === 'stun') {
+        addTeslaCoil(ctx, { x: gx, y: rp.b.y + 1.0 }, Math.min(1.7, radius * 0.6));
+        return;
+      }
       const center: Vec =
         effect === 'attract' ? { x: gx, y: rp.b.y - 0.5 } : { x: gx, y: rp.b.y - 3.2 };
       ctx.zones.push({

@@ -128,7 +128,7 @@ describe('generator', () => {
     for (let seed = 1; seed <= 15; seed++) {
       const c = cfgWith((x) => {
         x.objects.kinds = { propeller: true, arm2: false, saw: false, triangle: true, hammer: false, flipper: false };
-        x.objects.effects = { grow: true, shrink: false, destroy: false, attract: false, repel: true };
+        x.objects.effects = { grow: true, shrink: false, destroy: false, attract: false, repel: true, stun: false };
         x.objects.effectChance = 1;
         x.switches.enabled = false;
       });
