@@ -19,6 +19,7 @@
   color-scheme: dark;
 }
 * { box-sizing: border-box; }
+html { touch-action: manipulation; } /* no double-tap zoom */
 html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font: 14px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; overflow: hidden; }
 #app { display: grid; grid-template-columns: 350px 1fr; height: 100%; height: 100dvh; }
 button, input, select { font: inherit; color: inherit; }
@@ -223,6 +224,11 @@ body:not(.panel-open) #btn-open-panel { display: inline-flex; }
   body.mode-preview #minimap { top: calc(8px + var(--sat)); }
   body.mode-race #minimap { top: calc(56px + var(--sat)); left: auto; right: calc(8px + var(--sar)); }
   .checks { grid-template-columns: 1fr 1fr; }
+}
+/* touch screens: 16 px text in fields, or mobile browsers zoom the whole page in when one is
+   focused (and the zoom stays, cutting off the HUD on the right and bottom) */
+@media (pointer: coarse) {
+  input, select, textarea { font-size: 16px; }
 }
 /* very narrow phones: tighter control bar so it stays on one line */
 @media (max-width: 380px) {

@@ -17,6 +17,10 @@ paréntesis, el commit correspondiente.
   borde, muesca, esquinas redondeadas); antes la barra de controles quedaba tapada abajo. En
   pantallas muy angostas la barra se compacta para caber en una línea (≤ 340 px oculta 0,3×) y
   las etiquetas del marcador se recortan en vez de partirse.
+- **Sin zoom de página en móviles**: la página ya no se puede ampliar con dos dedos ni se amplía
+  sola al tocar un campo de la configuración (ahora con texto de 16 px en pantallas táctiles).
+  Ese zoom se quedaba puesto y cortaba la barra de controles, la clasificación y el minimapa por
+  abajo y por la derecha. La vista previa del mapa conserva su propio zoom.
 - **Hélices de reagrupación tan rápidas como los demás mecanismos**: ~1,9 rad/s en el embudo con
   hélice y ~1,5 rad/s en la cámara circular (antes ~1 rad/s, una vuelta cada ~6 s). Se verificó en
   el navegador que el giro dibujado y el del cuerpo físico coinciden con la velocidad definida;

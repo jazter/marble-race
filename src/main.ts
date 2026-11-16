@@ -487,6 +487,10 @@ $('btn-names').addEventListener('click', () => {
 $('btn-lb').addEventListener('click', () => $('leaderboard').classList.toggle('collapsed'));
 if (window.matchMedia('(max-width: 800px)').matches) $('leaderboard').classList.add('collapsed');
 
+// iOS Safari ignores user-scalable=no: block its pinch gesture so the page itself never zooms
+// (the map preview has its own pinch zoom on the canvas)
+document.addEventListener('gesturestart', (e) => e.preventDefault());
+
 window.addEventListener('keydown', (e) => {
   if (isDialogOpen()) return;
   if (e.key === 'Escape' && document.body.classList.contains('panel-open')) {
