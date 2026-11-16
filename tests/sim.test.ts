@@ -468,9 +468,9 @@ describe('stun walls', () => {
 });
 
 describe('stunners switch on and off', () => {
-  it('each stunner is on 1 s, off 1 s, with its own phase', () => {
+  it('each stunner is on 1 s, off 2 s, with its own phase', () => {
     expect(STUN_ON_SECONDS).toBe(1);
-    expect(STUN_OFF_SECONDS).toBe(1);
+    expect(STUN_OFF_SECONDS).toBe(2);
     const ids = ['w1', 'w2', 'tesla-3', 'mech-7', 'ramp1'];
     const phases = new Set<number>();
     for (const id of ids) {
@@ -484,8 +484,8 @@ describe('stunners switch on and off', () => {
           if (firstOn < 0) firstOn = t;
         }
       }
-      expect(on / N).toBeGreaterThan(0.48);
-      expect(on / N).toBeLessThan(0.52);
+      expect(on / N).toBeGreaterThan(0.31); // on a third of the time
+      expect(on / N).toBeLessThan(0.36);
       phases.add(Math.round(firstOn * 10));
       // one full on-stretch lasts ~1 s
       let t = 0;

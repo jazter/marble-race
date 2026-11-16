@@ -29,7 +29,9 @@ paréntesis, el commit correspondiente.
 - **Viento proporcional a la gravedad** (14–22 % de la gravedad). Antes soplaba con 4–8 m/s² en todo
   el mapa (hasta ~40° de inclinación efectiva) y pegaba canicas contra las paredes en las rampas
   que bajaban en contra del viento (`0d9ee18`).
-- **Los aturdidores se encienden 1 s y se apagan 1 s**, cada uno a su propio ritmo: paredes y
+- **Los aturdidores pasan el doble de tiempo apagados que encendidos** (1 s encendidos, 2 s
+  apagados): aturdimientos por carrera ~17 → ~10,6, mapas 20/20 resolubles, sin atascos.
+- **Los aturdidores se encienden y se apagan** (al principio 1 s y 1 s), cada uno a su propio ritmo: paredes y
   puntos de aturdir, bobinas de Tesla y mecanismos con «aturdir». Apagados se ven grises, sin
   brillo ni chispas, y no aturden. Al encenderse, las bobinas también aturden a las canicas que ya
   estaban dentro (`db03d18`).

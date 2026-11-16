@@ -56,7 +56,7 @@ Todas las opciones están en el panel lateral (⚙ en móvil). *Restablecer valo
 |---|---|
 | Reacción de paredes exteriores | Mixta: cada tramo con su propia reacción (sobre todo sólida, con rebote, lenta, lanzadores que empujan a favor del recorrido y, muy rara vez, tramos cortos que aturden; nunca dos seguidos ni donde se apoyan las rampas). También: sólida, rebote, lenta, aturdir, eliminar, lanzar |
 | Tipos de paredes especiales | Rebote, lenta, **aturdir** y lanzar (eliminar existe pero viene apagado) |
-| Aturdimiento | 1.2 s: la canica que toca una pared o punto de aturdir pierde casi toda su velocidad y flota con estrellitas antes de seguir; no se elimina. Todos los aturdidores (paredes, puntos, bobinas y mecanismos) se **encienden 1 s y se apagan 1 s**, cada uno a su propio ritmo; apagados se ven grises y no aturden |
+| Aturdimiento | 1.2 s: la canica que toca una pared o punto de aturdir pierde casi toda su velocidad y flota con estrellitas antes de seguir; no se elimina. Todos los aturdidores (paredes, puntos, bobinas y mecanismos) están **encendidos 1 s y apagados 2 s**, cada uno a su propio ritmo; apagados se ven grises y no aturden |
 | Proporción de especiales | 25 % |
 | Rebote / lentitud / lanzamiento | 1.1 / 85 % / 12 m/s |
 
