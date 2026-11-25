@@ -31,6 +31,7 @@ import {
   K_MONSTER,
   K_MARBLE,
   K_MECH,
+  K_PORTAL,
   K_SWITCH,
   K_WALL,
   K_ZONE,
@@ -47,6 +48,10 @@ import { PathProgress } from './progress';
 import { combinePhysics, type SwitchRuntime, SWITCH_REST } from './switches';
 
 /** Each marble can trigger flippers at most this many times per race. */
+/** Throws per marble per trampoline (then it is a plain pad), and the minimum time between two. */
+const TRAMPOLINE_THROWS = 3;
+const TRAMPOLINE_COOLDOWN = 0.3;
+/** Times a marble can fire the flippers of ONE group (a pinball table's pair, or a lone flipper). */
 const MAX_FLIPS_PER_MARBLE = 3;
 /** Seconds after recovering from a stun before a marble can be stunned again. */
 const STUN_COOLDOWN = 1.5;
@@ -95,9 +100,17 @@ class SimImpl implements Simulation {
   private prevX: number[] = [];
   private prevY: number[] = [];
   private segHint: number[] = [];
+  /** Conveyor belts by wall index. */
+  private conveyor: ({ speed: number; dx: number; dy: number } | undefined)[] = [];
+  private hasConveyors = false;
+  /** Trampoline throw speed by wall index, and throws per marble per trampoline. */
+  private trampoline: (number | undefined)[] = [];
+  private trampolineUses = new Map<number, number[]>();
+  /** Marble ids that already went through each portal. */
+  private portalUsed: Set<number>[] = [];
   private slowCount: number[] = [];
-  /** Times each marble has triggered a flipper (capped by MAX_FLIPS_PER_MARBLE). */
-  private flipCount: number[] = [];
+  /** Per flipper group: times each marble has fired it (capped by MAX_FLIPS_PER_MARBLE). */
+  private flipCount = new Map<string, number[]>();
   private lastKick: number[] = [];
   /** Sim time until which each marble is dazed by a 'stun' wall (0 = not stunned). */
   private stunUntil: number[] = [];
@@ -150,6 +163,7 @@ class SimImpl implements Simulation {
     this.buildWalls();
     this.buildGates();
     this.buildZones();
+    this.buildPortals();
     this.buildSwitches();
     this.buildMechanisms();
 
@@ -164,6 +178,7 @@ class SimImpl implements Simulation {
     this.buildMonsters();
 
     this.world.on('begin-contact', (c) => this.onContact(c, true));
+    if (this.hasConveyors) this.world.on('pre-solve', (c) => this.onPreSolve(c));
     this.world.on('end-contact', (c) => this.onContact(c, false));
 
     this.cam.update(this.marbles, false);
@@ -179,11 +194,47 @@ class SimImpl implements Simulation {
       this.keyOfWall.push(i);
       const body = this.world.createBody({ type: 'static', position: new Vec2(0, 0) });
       addFixtures(body, staticShapes(w.shape), {
-        restitution: reaction === 'bounce' ? config.walls.bounceRestitution : 0,
-        friction: 0.2,
+        restitution: reaction === 'bounce' ? config.walls.bounceRestitution : w.trampoline ? 0.5 : 0,
+        // a belt grips the marbles so it can drag them
+        friction: w.conveyor ? 0.9 : 0.2,
         userData: { k: K_WALL, i },
       });
+      if (w.conveyor && w.shape.type === 'polyline') {
+        const pts = w.shape.points;
+        const a = pts[0];
+        const b = pts[pts.length - 1];
+        const l = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+        this.conveyor[i] = { speed: w.conveyor, dx: (b.x - a.x) / l, dy: (b.y - a.y) / l };
+        this.hasConveyors = true;
+      }
+      if (w.trampoline) this.trampoline[i] = w.trampoline;
     });
+  }
+
+  /**
+   * Conveyor belts: give the contact a tangent speed so friction drags the marble along the belt
+   * (Box2D tangent = cross(normal, 1), normal from A to B; the solver drives (vB - vA)·t to it).
+   */
+  private onPreSolve(c: Contact): void {
+    const ta = c.getFixtureA().getUserData() as FixTag;
+    const tb = c.getFixtureB().getUserData() as FixTag;
+    let wall: number;
+    let wallIsA: boolean;
+    if (ta.k === K_WALL && tb.k === K_MARBLE) {
+      wall = ta.i;
+      wallIsA = true;
+    } else if (tb.k === K_WALL && ta.k === K_MARBLE) {
+      wall = tb.i;
+      wallIsA = false;
+    } else return;
+    const belt = this.conveyor[wall];
+    if (!belt) return;
+    const wm = c.getWorldManifold(null);
+    if (!wm) return;
+    const tx = wm.normal.y;
+    const ty = -wm.normal.x;
+    const along = belt.speed * (tx * belt.dx + ty * belt.dy);
+    c.setTangentSpeed(wallIsA ? along : -along);
   }
 
   private buildGates(): void {
@@ -193,6 +244,54 @@ class SimImpl implements Simulation {
       addFixtures(body, staticShapes(g.shape), { userData: { k: K_GATE, i } });
       this.gateBodies.set(g.id, body);
     }
+  }
+
+  /** Portal entrances: sensor discs. Each marble can use each portal once. */
+  private buildPortals(): void {
+    const list = this.map.portals ?? [];
+    list.forEach((q, i) => {
+      const body = this.world.createBody({ type: 'static', position: new Vec2(0, 0) });
+      body.createFixture({ shape: new Circle(new Vec2(q.entrance.x, q.entrance.y), q.radius), isSensor: true, userData: { k: K_PORTAL, i } as FixTag });
+      this.portalUsed.push(new Set());
+    });
+  }
+
+  /** Trampoline: keep some of the sliding speed and throw the marble off along the surface normal. */
+  private throwFromTrampoline(m: MarbleState, r: ContactRec): void {
+    const kick = this.trampoline[r.idx] ?? 0;
+    const body = this.bodies[m.id];
+    if (!body || (r.nx === 0 && r.ny === 0)) return;
+    if (!this.fxCooldownOk(this.keyOfWall[r.idx], m.id, TRAMPOLINE_COOLDOWN)) return;
+    let uses = this.trampolineUses.get(r.idx);
+    if (!uses) this.trampolineUses.set(r.idx, (uses = []));
+    if ((uses[m.id] ?? 0) >= TRAMPOLINE_THROWS) return; // a plain pad now: it rolls off
+    uses[m.id] = (uses[m.id] ?? 0) + 1;
+    const v = body.getLinearVelocity();
+    const vn = v.x * r.nx + v.y * r.ny;
+    const tx = (v.x - vn * r.nx) * 0.7;
+    const ty = (v.y - vn * r.ny) * 0.7;
+    body.setLinearVelocity(new Vec2(tx + r.nx * kick, ty + r.ny * kick));
+    this.emit({ t: this.time, type: 'effect', marbleId: m.id, effect: 'bounce', x: m.x, y: m.y });
+  }
+
+  /** Move a marble through portal i (once per marble per portal); it keeps a gentle speed along the flow. */
+  private enterPortal(m: MarbleState, i: number): void {
+    const q = this.map.portals?.[i];
+    const used = this.portalUsed[i];
+    const body = this.bodies[m.id];
+    if (!q || !used || used.has(m.id) || !body) return;
+    used.add(m.id);
+    const v = body.getLinearVelocity();
+    const sp = Math.min(Math.hypot(v.x, v.y), 3);
+    const f = this.map.flowDir;
+    body.setTransform(new Vec2(q.exit.x, q.exit.y), body.getAngle());
+    body.setLinearVelocity(new Vec2(f.x * sp, f.y * sp));
+    body.setAwake(true);
+    this.emit({ t: this.time, type: 'portal', marbleId: m.id, portalId: q.id, kind: q.kind, x: m.x, y: m.y, toX: q.exit.x, toY: q.exit.y });
+    m.x = q.exit.x;
+    m.y = q.exit.y;
+    this.hist[m.id].length = 0; // unstuck: a fresh start at the exit
+    this.segHint[m.id] = -1; // progress: search the whole path again
   }
 
   private buildZones(): void {
@@ -413,7 +512,7 @@ class SimImpl implements Simulation {
     } else return;
     let nx = 0;
     let ny = 0;
-    if (begin && ot.k === K_WALL && this.wallReaction[ot.i] === 'launch') {
+    if (begin && ot.k === K_WALL && (this.wallReaction[ot.i] === 'launch' || this.trampoline[ot.i] !== undefined)) {
       const wm = c.getWorldManifold(null);
       if (wm) {
         const n = wm.normal;
@@ -663,11 +762,17 @@ class SimImpl implements Simulation {
    * cooldown). The launch itself is just the kinematic surface velocity of the swing.
    */
   /**
-   * Flippers fire when a racing marble touches them, but each marble can only trigger
-   * flippers MAX_FLIPS_PER_MARBLE times per race: after that it no longer fires them and
-   * rolls off toward the drain, so no marble bounces on a pinball table forever.
+   * Flippers fire when a racing marble touches them, but each marble can only trigger the
+   * flippers of one group (a pinball table's pair, or a lone ramp flipper) MAX_FLIPS_PER_MARBLE
+   * times: after that those flippers ignore it and it rolls off toward the drain, so no marble
+   * bounces on a table forever — while every other table further down still works for it.
    */
   private scanFlipperTouch(rt: MechRuntime): void {
+    if (!rt.flip.some((f) => f)) return;
+    const gk = rt.def.group ?? rt.def.id;
+    const limit = rt.def.flipLimit ?? MAX_FLIPS_PER_MARBLE;
+    let counts = this.flipCount.get(gk);
+    if (!counts) this.flipCount.set(gk, (counts = []));
     for (let i = 0; i < rt.bodies.length; i++) {
       const f = rt.flip[i];
       if (!f) continue;
@@ -682,10 +787,10 @@ class SimImpl implements Simulation {
         const tag = (fa.getBody() === other ? fa : c.getFixtureB()).getUserData() as FixTag;
         if (tag.k !== K_MARBLE) continue;
         const m = this.marbles[tag.i];
-        if (m && m.status === 'racing' && m.heldBy === undefined && (this.flipCount[m.id] ?? 0) < MAX_FLIPS_PER_MARBLE) touching.push(m.id);
+        if (m && m.status === 'racing' && m.heldBy === undefined && (counts[m.id] ?? 0) < limit) touching.push(m.id);
       }
       rt.touch[i] = touching.length > 0;
-      if (ready && touching.length) for (const id of touching) this.flipCount[id] = (this.flipCount[id] ?? 0) + 1;
+      if (ready && touching.length) for (const id of touching) counts[id] = (counts[id] ?? 0) + 1;
     }
   }
 
@@ -708,6 +813,10 @@ class SimImpl implements Simulation {
           continue;
         }
         if (!r.begin || m.status !== 'racing' || m.heldBy !== undefined) continue;
+        if (this.trampoline[r.idx] !== undefined) {
+          this.throwFromTrampoline(m, r);
+          continue;
+        }
         if (reaction === 'bounce') {
           if (this.fxCooldownOk(this.keyOfWall[r.idx], m.id, BOUNCE_COOLDOWN)) {
             this.emit({ t: this.time, type: 'effect', marbleId: m.id, effect: 'bounce', x: m.x, y: m.y });
@@ -749,6 +858,8 @@ class SimImpl implements Simulation {
           this.applyObjectEffect(m, z.effect, z.strength, this.keyOfZone[r.idx]);
         } else if (r.kind === K_SWITCH) {
           this.triggerSwitch(r.idx);
+        } else if (r.kind === K_PORTAL) {
+          this.enterPortal(m, r.idx);
         }
       }
     }

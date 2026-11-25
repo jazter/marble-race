@@ -140,6 +140,8 @@ export const SECTIONS: Section[] = [
           ['triangle', 'Triángulo'],
           ['hammer', 'Martillo'],
           ['flipper', 'Paletas de pinball'],
+          ['gear', 'Engrane'],
+          ['lift', 'Elevador de escalera'],
         ],
       },
       {
@@ -159,6 +161,9 @@ export const SECTIONS: Section[] = [
       { kind: 'range', label: 'Velocidad', path: 'objects.speed', min: 0.2, max: 3, step: 0.05, unit: '×', decimals: 2 },
       { kind: 'range', label: 'Probabilidad de efecto', path: 'objects.effectChance', min: 0, max: 1, step: 0.01, percent: true },
       { kind: 'toggle', label: 'Zonas con efecto', path: 'objects.zones' },
+      { kind: 'toggle', label: 'Portales (atajos y trampas)', path: 'objects.portals' },
+      { kind: 'toggle', label: 'Cintas transportadoras', path: 'objects.conveyors' },
+      { kind: 'toggle', label: 'Trampolines', path: 'objects.trampolines' },
     ],
   },
   {
@@ -257,7 +262,7 @@ export const SECTIONS: Section[] = [
       { kind: 'range', label: 'Puntos de reagrupación', path: 'map.regroups', min: 0, max: 4, step: 1, hint: 'Zonas donde la carrera se junta de nuevo' },
       { kind: 'range', label: 'Dificultad', path: 'map.difficulty', min: 0, max: 1, step: 0.01, percent: true },
       { kind: 'range', label: 'Intentos máximos', path: 'map.maxAttempts', min: 1, max: 100, step: 1 },
-      { kind: 'seed', label: 'Semilla', path: 'seed' },
+      { kind: 'seed', label: 'Semilla', path: 'seed', hint: 'Cada mapa nuevo usa una semilla al azar; escribe una para repetir ese mapa' },
     ],
   },
 ];
@@ -275,6 +280,9 @@ function setPath(obj: unknown, path: string, value: unknown): void {
 export class ConfigPanel {
   private refreshers: (() => void)[] = [];
   private enablers: { node: HTMLElement; fn: (c: GameConfig) => boolean }[] = [];
+
+  /** Called when the player types a seed or rolls the dice (the next map should use it). */
+  onSeedEdited?: () => void;
 
   constructor(
     private root: HTMLElement,
@@ -458,11 +466,13 @@ export class ConfigPanel {
       const v = Math.max(0, Math.floor(parseFloat(input.value)));
       setPath(this.config, f.path, Number.isFinite(v) ? v : 0);
       show();
+      this.onSeedEdited?.();
       this.changed();
     });
     dice.addEventListener('click', () => {
       setPath(this.config, f.path, 1 + Math.floor(Math.random() * 999999));
       show();
+      this.onSeedEdited?.();
       this.changed();
     });
     this.refreshers.push(show);

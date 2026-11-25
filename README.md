@@ -6,10 +6,10 @@ Juega en <https://jazter.github.io/marble-race/> · Historial de cambios: [CHANG
 
 ## Cómo jugar
 
-1. **Generar un mapa**: pulsa *🎲 Generar mapa*. El juego crea el recorrido a partir de una semilla.
+1. **Generar un mapa**: pulsa *🎲 Generar mapa*. Cada mapa nuevo usa una semilla al azar; para repetir un mapa, escribe su semilla en *Mapa → Semilla* antes de generar.
 2. **Validación**: una simulación previa corre la carrera completa sin dibujarla. Si ninguna canica llega a la meta, prueba con la semilla siguiente.
-3. **Vista previa**: observa el mapa completo, con zoom y desplazamiento.
-4. **Elige tu canica**: pulsa *▶ Iniciar carrera*; las canicas esperan en la salida. Toca una (o su fila en la lista) para ponerle nombre; los nombres se recuerdan entre carreras para las canicas con el mismo aspecto (*Reiniciar nombres* los borra).
+3. **Vista previa**: explora el mapa completo: arrastra para moverte y usa la rueda o pellizca para acercar.
+4. **Elige tu canica**: pulsa *▶ Elegir canicas*; las canicas esperan en la salida. Toca una (o su fila en la lista) para ponerle nombre; los nombres se recuerdan entre carreras para las canicas con el mismo aspecto (*Reiniciar nombres* los borra).
 5. **Carrera**: pulsa *▶ Iniciar conteo* (o espacio). Al terminar se muestra el podio.
 
 Controles durante la carrera:
@@ -66,12 +66,18 @@ Todas las opciones están en el panel lateral (⚙ en móvil). *Restablecer valo
 
 | Opción | Por defecto |
 |---|---|
-| Mecanismos | Hélice, brazo doble, sierra, triángulo, martillo y paletas de pinball (se activan al tocarlas y lanzan la canica hacia arriba; ignoran la velocidad de objetos y los efectos de interruptor) |
+| Mecanismos | Hélice, brazo doble, sierra, triángulo, martillo, paletas de pinball, **engrane** y **elevador de escalera** (todos) |
+| Paletas de pinball | Se activan al tocarlas y lanzan la canica hacia arriba (ignoran la velocidad de objetos y los interruptores). Cada canica puede activar 3 veces las paletas de cada mesa (o cada paleta suelta), así las de más abajo siguen funcionando |
+| Engranes | Tramo con una o dos cámaras redondas, cada una con un engrane de latón que lleva las canicas en los huecos entre sus dientes hasta la salida. Reemplazan a las filas de hélices, triángulos y martillos, que casi no tocaban a las canicas (hélices, triángulos y martillos siguen en las trampas del techo a dos aguas y las mesas de pinball; las hélices, en los puntos de reagrupación) |
+| Elevador de escalera | Una escalera que cruza el pasillo con una paleta en cada escalón: la canica rueda hasta el fondo del escalón, la paleta la lanza al de arriba (si no llega, lo vuelve a intentar) y desde el último cae por un canal al lado. Como mucho uno por mapa |
 | Efectos | Agrandar, achicar, destruir, atraer, repeler y **aturdir** (todos). Los mecanismos con «aturdir» se ven violetas y aturden al tocarlos |
 | Bobinas de Tesla | Con «aturdir» y zonas activas: orbes eléctricos colgados en los huecos de algunas rampas (y en tramos de zonas) que aturden a las canicas que están en su campo mientras están encendidos (al encenderse también aturden a las que ya estaban dentro) |
 | Densidad / velocidad | 50 % / 1× |
 | Probabilidad de efecto | 60 % |
 | Zonas con efecto | Activas |
+| Portales | Activos: ~1–2 por mapa en huecos por donde caen las canicas. *Atajo* (azul) te manda más adelante; *Trampa* (rojo) te regresa un poco. Cada canica puede usar cada portal una sola vez |
+| Cintas transportadoras | Activas: ~30 % de las rampas de zigzag arrastran a las canicas, casi siempre a favor (más rápido) y a veces en contra |
+| Trampolines | Activos: tramo con dos trampolines bajo embudos que lanzan las canicas al otro lado; cada canica recibe hasta 3 lanzamientos por trampolín |
 
 **Monstruos** — criaturas que agarran canicas y, según una probabilidad, las devoran o las sueltan: la *araña* cuelga de un hilo y baja sobre la canica que tiene debajo, el *pulpo* sujeta hasta 8 canicas a la vez (una por tentáculo), el *pez* cruza nadando de izquierda a derecha y captura la canica que encuentra, y la *serpiente* atraviesa el mapa en cualquier ángulo para atrapar una.
 
@@ -122,11 +128,11 @@ Todas las opciones están en el panel lateral (⚙ en móvil). *Restablecer valo
 
 | Opción | Por defecto |
 |---|---|
-| Segmentos | 8 (2–24) |
+| Segmentos | 10 (2–24) |
 | Ancho del pasillo | 16 m |
 | Dificultad | 50 % |
 | Intentos máximos | 25 |
-| Semilla | 12345 |
+| Semilla | Al azar en cada mapa nuevo (escribe una para repetir un mapa) |
 
 ## Cómo funciona
 

@@ -111,23 +111,29 @@ const HUE_ORDER = Array.from({ length: 24 }, (_, i) => (i * 7) % 24);
 
 interface Solid {
   key: string;
+  /** Slug used in every look key built from this colour (stable even if the display name changes). */
+  kslug: string;
   name: string;
   hsl: Hsl;
   css: string;
   lab: Lab;
 }
 
-const mkSolid = (key: string, name: string, h: number, s: number, l: number): Solid => ({
+const mkSolid = (key: string, name: string, h: number, s: number, l: number, kslug = slug(name)): Solid => ({
   key,
+  kslug,
   name,
   hsl: { h, s, l },
   css: hslCss(h, s, l),
   lab: hslToLab(h, s, l),
 });
 
+/** Renamed colours keep their old slug in look keys, so names given by spectators still apply. */
+const LEGACY_SLUG: Record<string, string> = { Rojo: 'rubi' };
+
 /** Hand-picked base colours, in an order where neighbours are as different as possible. */
 const BASE_SOLIDS: [string, number, number, number][] = [
-  ['Rubí', 356, 82, 44],
+  ['Rojo', 356, 82, 44],
   ['Zafiro', 224, 82, 42],
   ['Girasol', 50, 96, 52],
   ['Esmeralda', 142, 72, 34],
@@ -163,7 +169,10 @@ let solidsCache: Solid[] | null = null;
 /** Base colours first, then hue x lightness x saturation variants by farthest-point order. */
 function solids(): Solid[] {
   if (solidsCache) return solidsCache;
-  const out: Solid[] = BASE_SOLIDS.map(([n, h, s, l]) => mkSolid(`solid-${slug(n)}`, n, h, s, l));
+  const out: Solid[] = BASE_SOLIDS.map(([n, h, s, l]) => {
+    const k = LEGACY_SLUG[n] ?? slug(n);
+    return mkSolid(`solid-${k}`, n, h, s, l, k);
+  });
   const pool: Solid[] = [];
   for (const [l, lw] of GRID_LIGHT) {
     for (const [s, sw] of GRID_SAT) {
@@ -237,7 +246,7 @@ function bicolorEntries(): CatalogEntry[] {
     members: [i, j],
     score: labDist(S[i].lab, S[j].lab),
     entry: {
-      key: `bicolor-${slug(S[i].name)}-${slug(S[j].name)}`,
+      key: `bicolor-${S[i].kslug}-${S[j].kslug}`,
       name: list([S[i].name, S[j].name]),
       skin: { type: 'bicolor', colors: [S[i].css, S[j].css] },
     },
@@ -266,7 +275,7 @@ function tricolorEntries(): CatalogEntry[] {
           members: [a, b, c],
           score,
           entry: {
-            key: `tricolor-${slug(S[a].name)}-${slug(S[b].name)}-${slug(S[c].name)}`,
+            key: `tricolor-${S[a].kslug}-${S[b].kslug}-${S[c].kslug}`,
             name: list([S[a].name, S[b].name, S[c].name]),
             skin: { type: 'tricolor', colors: [S[a].css, S[b].css, S[c].css] },
           },
@@ -292,7 +301,7 @@ function stripedEntries(): CatalogEntry[] {
         members: [m, t],
         score,
         entry: {
-          key: `striped-${slug(S[m].name)}-${slug(S[t].name)}`,
+          key: `striped-${S[m].kslug}-${S[t].kslug}`,
           name,
           skin: { type: 'striped', colors: [S[m].css, S[t].css] },
         },
@@ -414,7 +423,7 @@ function glassEntries(): CatalogEntry[] {
     if (seen.has(tint + tint2)) continue;
     seen.add(tint + tint2);
     out.push({
-      key: `glass-${slug(s.name)}`,
+      key: `glass-${s.kslug}`,
       name: `Cristal ${s.name}`,
       skin: { type: 'glass', colors: [tint, tint2] },
     });

@@ -149,13 +149,24 @@ const progressLine = $('progress-line');
 const progressBar = $('progress-bar');
 const progressLog = $('progress-log');
 
+/**
+ * Every new map gets a fresh random seed — also the first one after opening the page — unless the
+ * player just typed a seed (or rolled one with the dice) in the panel: then that one is used once.
+ */
+let seedPinned = false;
+panel.onSeedEdited = () => {
+  seedPinned = true;
+};
+
 async function generate(randomSeed = false): Promise<void> {
   if (mode === 'generating' || loading) return;
-  if (randomSeed) {
+  if (randomSeed || !seedPinned) {
     config.seed = 1 + Math.floor(Math.random() * 999999);
     panel.refresh();
     saveConfig(config);
+    lastSig = genSig(config); // a new seed is not a pending settings change
   }
+  seedPinned = false;
   if (isCompact()) closePanel();
   disposeRace();
   const cfg: GameConfig = structuredClone(config);
@@ -215,6 +226,12 @@ $('btn-error-config').addEventListener('click', () => {
   setMode(race ? 'preview' : 'idle');
   openPanel();
 });
+
+// touch screens get gesture wording in the preview hint
+if (window.matchMedia?.('(pointer: coarse)').matches) {
+  $('preview-hint').innerHTML =
+    '🔍 <b>Explora el mapa</b> antes de correr: arrastra con un dedo para moverte y pellizca con dos para acercar o alejar. <em>Ajustar vista</em> lo muestra completo.';
+}
 
 function updatePreviewInfo(): void {
   const info = $('preview-info');

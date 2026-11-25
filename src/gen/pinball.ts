@@ -81,8 +81,9 @@ function pinball(ctx: Ctx): void {
   const startR = { x: sideR, y: pivotY - (sideR - pxR) * tan };
   addWall(ctx, { type: 'polyline', thickness: 0.4, points: [startL, { x: pxL, y: pivotY }] }, 'wall', { reaction: 'solid' });
   addWall(ctx, { type: 'polyline', thickness: 0.4, points: [startR, { x: pxR, y: pivotY }] }, 'wall', { reaction: 'solid' });
-  makeFlipper(ctx, { x: pxL, y: pivotY }, { L, dir: 1 });
-  makeFlipper(ctx, { x: pxR, y: pivotY }, { L, dir: -1 });
+  const fl = makeFlipper(ctx, { x: pxL, y: pivotY }, { L, dir: 1 });
+  const fr = makeFlipper(ctx, { x: pxR, y: pivotY }, { L, dir: -1 });
+  fl.group = fr.group = fl.id; // the pair counts as one for the per-marble flip limit
   pathTo(ctx, cx, pivotY + 1);
   const tipY = pivotY + L * Math.sin(FLIPPER_TILT);
   pathTo(ctx, cx, tipY + 1);

@@ -148,6 +148,18 @@ export type SimEvent =
       x: number;
       y: number;
     }
+  | {
+      t: number;
+      type: 'portal';
+      marbleId: number;
+      portalId: string;
+      kind: 'shortcut' | 'trap';
+      /** Entrance and exit positions. */
+      x: number;
+      y: number;
+      toX: number;
+      toY: number;
+    }
   | { t: number; type: 'raceEnd'; reason: RaceEndReason };
 
 export type RaceEndReason = 'podium' | 'allDone' | 'timeout' | 'noMarbles';

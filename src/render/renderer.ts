@@ -6,7 +6,7 @@ import { stunnerOn } from '../core/stun';
 import { TextCache } from './textCache';
 import type { BackgroundKind, EffectType, GameConfig, WallReaction } from '../core/config';
 import { BackgroundPainter, scenePalette, type ScenePalette, type SceneKind } from './backgrounds';
-import type { LocalShape, MapDef, MarbleProfile, Monster, StaticShape, Vec, Wall } from '../core/types';
+import type { LocalShape, MapDef, MarbleProfile, Monster, Portal, StaticShape, Vec, Wall } from '../core/types';
 import type { CameraState, MarbleState, MechanismPose, MonsterState, SimEvent, Simulation, SwitchState } from '../sim/api';
 import { alpha, darken, lighten, mix } from './color';
 import { ParticleSystem, drawSkull } from './particles';
@@ -23,6 +23,9 @@ export const EFFECT_COLORS: Record<EffectType, string> = {
   stun: '#b57cff',
 };
 const STEEL = '#8d98a8';
+/** Staircase elevator slats. */
+const LIFT_COLOR = '#d99b3f';
+const PORTAL_COLORS = { shortcut: '#38d6ff', trap: '#ff5a3c' } as const;
 /** Fraction of the visible view the race camera is shifted back (uphill) from its target. */
 const CAMERA_BACK = 0.15;
 const CAMERA_BACK_LANDSCAPE = 0.08;
@@ -128,6 +131,9 @@ export class Renderer {
   private map: MapDef | null = null;
   private config: GameConfig;
   private walls: WallItem[] = [];
+  /** Trampolines (for the landing dip) and the clock time each was last hit. */
+  private trampolines: Wall[] = [];
+  private trampolineHit = new Map<string, number>();
   private gates: GateItem[] = [];
   private reach: number[] = [];
   private poses0: MechanismPose[] = [];
@@ -230,6 +236,7 @@ export class Renderer {
   setMap(map: MapDef): void {
     this.map = map;
     this.walls = map.walls.map((wall) => ({ wall, box: shapeBox(wall.shape) }));
+    this.trampolines = map.walls.filter((w) => w.trampoline);
     this.gates = map.gates.map((g) => ({ id: g.id, shape: g.shape, box: shapeBox(g.shape), center: shapeCenter(g.shape) }));
     this.poses0 = map.mechanisms.map((m) => mechanismPoseAt(m, 0));
     this.monsters = (map.monsters ?? []).map((def) => ({ def, box: monsterBounds(def), rest: restState(def) }));
@@ -238,7 +245,7 @@ export class Renderer {
       for (const l of m.links) {
         let e = 0;
         for (const sh of l.shapes) e = Math.max(e, localShapeExtent(sh));
-        r += e + (l.tip ? Math.hypot(l.tip.x, l.tip.y) : 0);
+        r += e + (l.tip ? Math.hypot(l.tip.x, l.tip.y) : 0) + (l.motion.type === 'slide' ? Math.hypot(l.motion.dx, l.motion.dy) : 0);
       }
       return Math.max(r, m.fieldRadius ?? 0) + 1.5;
     });
@@ -432,6 +439,15 @@ export class Renderer {
           break;
         }
         case 'effect': {
+          if (e.effect === 'bounce' && this.trampolines.length) {
+            for (const w of this.trampolines) {
+              if (w.shape.type !== 'polyline') continue;
+              const p = w.shape.points;
+              const mx = (p[0].x + p[p.length - 1].x) / 2;
+              const my = (p[0].y + p[p.length - 1].y) / 2;
+              if (Math.hypot(e.x - mx, e.y - my) < 2.6) this.trampolineHit.set(w.id, this.clock);
+            }
+          }
           const col = FX_COLORS[e.effect];
           if (!col) break;
           if (e.effect === 'attract' || e.effect === 'repel') break;
@@ -450,6 +466,14 @@ export class Renderer {
             this.particles.ring(sw.position.x, sw.position.y, e.active ? '#46f08a' : '#e0b12f', 3, 0.7);
             this.particles.burst(sw.position.x, sw.position.y, e.active ? '#46f08a' : '#e0b12f', 14, 6);
           }
+          break;
+        }
+        case 'portal': {
+          const col = PORTAL_COLORS[e.kind];
+          this.particles.ring(e.x, e.y, col, 1.4, 0.4);
+          this.particles.burst(e.x, e.y, col, 8, 3, { gravity: 0, drag: 3 });
+          this.particles.ring(e.toX, e.toY, col, 1.6, 0.5);
+          this.particles.burst(e.toX, e.toY, col, 14, 6, { gravity: 0 });
           break;
         }
         case 'gateOpen': {
@@ -540,6 +564,9 @@ export class Renderer {
     ctx.stroke();
     ctx.setLineDash([]);
 
+    // portals (entrance vortex, exit ring; the link is hinted in the map preview)
+    for (const q of map.portals ?? []) this.drawPortal(q, t, box, cam === null);
+
     // zones
     for (const z of map.zones) this.drawZone(z.shape, z.effect, t, z.effect !== 'stun' || this.stunOn(z.id));
 
@@ -577,14 +604,15 @@ export class Renderer {
       const r = this.reach[i];
       const pv = p.links[0];
       if (pv.x + r < box.x0 || pv.x - r > box.x1 || pv.y + r < box.y0 || pv.y - r > box.y1) return;
-      const col = m.effect === 'stun' && !this.stunOn(m.id) ? STUN_OFF : m.effect ? EFFECT_COLORS[m.effect] : STEEL;
+      const col = m.kind === 'lift' ? LIFT_COLOR : m.effect === 'stun' && !this.stunOn(m.id) ? STUN_OFF : m.effect ? EFFECT_COLORS[m.effect] : STEEL;
       m.links.forEach((link, li) => {
         const lp = p.links[li];
         if (!lp) return;
         if (link.motion.type === 'flipper') this.drawFlipper(m.id + '#' + li, link.shapes, lp);
+        else if (m.kind === 'gear') this.drawGear(link.shapes, lp.x, lp.y, lp.angle);
         else this.drawLink(link.shapes, lp.x, lp.y, lp.angle, col, m.effect === 'destroy');
       });
-      if (m.kind !== 'flipper') for (const lp of p.links) this.drawBolt(lp.x, lp.y);
+      if (m.kind !== 'flipper' && m.kind !== 'lift') for (const lp of p.links) this.drawBolt(lp.x, lp.y);
     });
 
     // switches
@@ -687,6 +715,14 @@ export class Renderer {
   }
 
   private drawWall(w: Wall, t: number): void {
+    if (w.conveyor && w.shape.type === 'polyline') {
+      this.drawConveyor(w.shape.points, w.shape.thickness, w.conveyor, t);
+      return;
+    }
+    if (w.trampoline && w.shape.type === 'polyline') {
+      this.drawTrampoline(w);
+      return;
+    }
     const ctx = this.ctx;
     const scene = this.scene();
     const theme = scene ?? this.map!.theme;
@@ -816,6 +852,108 @@ export class Renderer {
     }
     if (re === 'launch' && w.launchDir) this.drawChevrons(sh, w.launchDir, t);
     if (re === 'stun' && sh.type === 'circle') this.drawStunBolt(sh.center.x, sh.center.y, sh.radius * 0.75, stunOn);
+  }
+
+  /** Conveyor belt: dark rubber band with yellow stripes travelling at the belt's direction, and end rollers. */
+  private drawConveyor(points: Vec[], th: number, speed: number, t: number): void {
+    const ctx = this.ctx;
+    ctx.save();
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    pathLine(ctx, points);
+    ctx.strokeStyle = '#14171d';
+    ctx.lineWidth = th + 0.2;
+    ctx.stroke();
+    ctx.strokeStyle = '#3a404c';
+    ctx.lineWidth = th;
+    ctx.stroke();
+    ctx.strokeStyle = '#ffcf3f';
+    ctx.lineWidth = th * 0.32;
+    ctx.lineCap = 'butt';
+    ctx.setLineDash([0.32, 0.38]);
+    ctx.lineDashOffset = -t * speed * 0.6; // stripes move toward where the belt drags
+    ctx.stroke();
+    ctx.setLineDash([]);
+    for (const p of [points[0], points[points.length - 1]]) {
+      ctx.fillStyle = '#9aa4b5';
+      ctx.strokeStyle = '#14171d';
+      ctx.lineWidth = 0.05;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, th * 0.6, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  /** Trampoline: springs and legs under a blue mat that dips for a moment when a marble lands. */
+  private drawTrampoline(w: Wall): void {
+    if (w.shape.type !== 'polyline') return;
+    const ctx = this.ctx;
+    const [a, b] = [w.shape.points[0], w.shape.points[w.shape.points.length - 1]];
+    const f = this.map?.flowDir ?? { x: 0, y: 1 };
+    const hit = this.trampolineHit.get(w.id);
+    const dip = hit !== undefined ? Math.max(0, 1 - (this.clock - hit) / 0.25) * 0.22 : 0;
+    const off = 0.6; // base bar distance "below" the mat (along gravity)
+    const ba = { x: a.x + f.x * off, y: a.y + f.y * off };
+    const bb = { x: b.x + f.x * off, y: b.y + f.y * off };
+    const mid = { x: (a.x + b.x) / 2 + f.x * dip, y: (a.y + b.y) / 2 + f.y * dip };
+    ctx.save();
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    // legs
+    ctx.strokeStyle = '#6b7383';
+    ctx.lineWidth = 0.12;
+    for (const p of [ba, bb]) {
+      ctx.beginPath();
+      ctx.moveTo(p.x, p.y);
+      ctx.lineTo(p.x + f.x * 0.55, p.y + f.y * 0.55);
+      ctx.stroke();
+    }
+    // base bar
+    ctx.strokeStyle = '#8b93a3';
+    ctx.lineWidth = 0.14;
+    ctx.beginPath();
+    ctx.moveTo(ba.x, ba.y);
+    ctx.lineTo(bb.x, bb.y);
+    ctx.stroke();
+    // springs
+    ctx.strokeStyle = '#c9d1de';
+    ctx.lineWidth = 0.05;
+    const n = 4;
+    for (let k = 0; k < n; k++) {
+      const u = (k + 0.5) / n;
+      const top = { x: a.x + (b.x - a.x) * u, y: a.y + (b.y - a.y) * u };
+      const dk = dip * (1 - Math.abs(u - 0.5) * 2);
+      top.x += f.x * dk;
+      top.y += f.y * dk;
+      const bot = { x: ba.x + (bb.x - ba.x) * u, y: ba.y + (bb.y - ba.y) * u };
+      const px = (b.x - a.x) * 0.04;
+      const py = (b.y - a.y) * 0.04;
+      ctx.beginPath();
+      ctx.moveTo(top.x, top.y);
+      for (let z = 1; z <= 5; z++) {
+        const q = z / 6;
+        const sgn = z % 2 === 0 ? 1 : -1;
+        ctx.lineTo(top.x + (bot.x - top.x) * q + px * sgn, top.y + (bot.y - top.y) * q + py * sgn);
+      }
+      ctx.lineTo(bot.x, bot.y);
+      ctx.stroke();
+    }
+    // mat
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y);
+    ctx.quadraticCurveTo(mid.x * 2 - (a.x + b.x) / 2, mid.y * 2 - (a.y + b.y) / 2, b.x, b.y);
+    ctx.strokeStyle = '#0d3b66';
+    ctx.lineWidth = w.shape.thickness + 0.14;
+    ctx.stroke();
+    ctx.strokeStyle = '#3fa9ff';
+    ctx.lineWidth = w.shape.thickness;
+    ctx.stroke();
+    ctx.strokeStyle = alpha('#d8f0ff', 0.6);
+    ctx.lineWidth = w.shape.thickness * 0.3;
+    ctx.stroke();
+    ctx.restore();
   }
 
   private stunOn(id: string): boolean {
@@ -991,6 +1129,65 @@ export class Renderer {
       ctx.setLineDash([]);
     }
     ctx.globalAlpha = 1;
+  }
+
+  /** Brass gear: union of hub + teeth with a dark outline, a recessed rim, spoke holes and an axle. */
+  private drawGear(shapes: LocalShape[], px: number, py: number, angle: number): void {
+    const ctx = this.ctx;
+    const path = (sh: LocalShape): void => {
+      ctx.beginPath();
+      if (sh.type === 'circle') ctx.arc(sh.cx, sh.cy, sh.r, 0, Math.PI * 2);
+      else if (sh.type === 'box') {
+        ctx.save();
+        ctx.translate(sh.cx, sh.cy);
+        ctx.rotate(sh.angle);
+        ctx.rect(-sh.hw, -sh.hh, sh.hw * 2, sh.hh * 2);
+        ctx.restore();
+      } else {
+        const p = sh.points;
+        ctx.moveTo(p[0].x, p[0].y);
+        for (let i = 1; i < p.length; i++) ctx.lineTo(p[i].x, p[i].y);
+        ctx.closePath();
+      }
+    };
+    ctx.save();
+    ctx.translate(px, py);
+    ctx.rotate(angle);
+    ctx.lineJoin = 'round';
+    // outline first (each piece), then fills on top: the union keeps one clean silhouette
+    ctx.strokeStyle = '#4a3410';
+    ctx.lineWidth = 0.18;
+    for (const sh of shapes) {
+      path(sh);
+      ctx.stroke();
+    }
+    ctx.fillStyle = '#d4a943';
+    for (const sh of shapes) {
+      path(sh);
+      ctx.fill();
+    }
+    const hub = shapes.find((s) => s.type === 'circle');
+    if (hub && hub.type === 'circle') {
+      const r = hub.r;
+      ctx.strokeStyle = '#a07a22';
+      ctx.lineWidth = Math.max(0.06, r * 0.08);
+      ctx.beginPath();
+      ctx.arc(0, 0, r * 0.82, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.fillStyle = '#7d5c17';
+      const holes = r >= 1.1 ? 5 : 4;
+      for (let i = 0; i < holes; i++) {
+        const a = (i / holes) * Math.PI * 2 + Math.PI / holes;
+        ctx.beginPath();
+        ctx.arc(Math.cos(a) * r * 0.5, Math.sin(a) * r * 0.5, r * 0.17, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.fillStyle = alpha('#fff4cc', 0.35);
+      ctx.beginPath();
+      ctx.arc(-r * 0.35, -r * 0.4, r * 0.18, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
   }
 
   private drawLink(shapes: LocalShape[], px: number, py: number, angle: number, color: string, saw: boolean): void {
@@ -1236,6 +1433,83 @@ export class Renderer {
     ctx.setLineDash([]);
     ctx.lineDashOffset = 0;
     drawGlyph(ctx, effect, c.x, c.y, Math.min(r * 0.55, 1.1), alpha(lighten(col, 0.5), 0.95));
+  }
+
+  /** Portal: a swirling vortex at the entrance and a softer ring at the exit, cyan (shortcut) or red (trap). */
+  private drawPortal(q: Portal, t: number, box: Box, preview: boolean): void {
+    const ctx = this.ctx;
+    const col = PORTAL_COLORS[q.kind];
+    const vis = (p: Vec, r: number): boolean => p.x + r > box.x0 && p.x - r < box.x1 && p.y + r > box.y0 && p.y - r < box.y1;
+    if (preview) {
+      // where it leads
+      ctx.save();
+      ctx.strokeStyle = alpha(col, 0.35);
+      ctx.lineWidth = 0.12;
+      ctx.setLineDash([0.5, 0.45]);
+      ctx.beginPath();
+      ctx.moveTo(q.entrance.x, q.entrance.y);
+      const mx = (q.entrance.x + q.exit.x) / 2 + (q.exit.y - q.entrance.y) * 0.12;
+      ctx.quadraticCurveTo(mx, (q.entrance.y + q.exit.y) / 2, q.exit.x, q.exit.y);
+      ctx.stroke();
+      ctx.restore();
+    }
+    const r = q.radius;
+    if (vis(q.entrance, r + 1)) {
+      const c = q.entrance;
+      ctx.save();
+      if (this.lite) ctx.fillStyle = alpha(col, 0.3);
+      else {
+        const g = ctx.createRadialGradient(c.x, c.y, 0, c.x, c.y, r * 1.15);
+        g.addColorStop(0, '#05060c');
+        g.addColorStop(0.55, alpha(col, 0.55));
+        g.addColorStop(1, alpha(col, 0));
+        ctx.fillStyle = g;
+      }
+      ctx.beginPath();
+      ctx.arc(c.x, c.y, r * 1.15, 0, Math.PI * 2);
+      ctx.fill();
+      // spiral arms turning inward
+      ctx.lineCap = 'round';
+      for (let k = 0; k < 3; k++) {
+        const a0 = t * 3 + (k * Math.PI * 2) / 3;
+        ctx.strokeStyle = alpha(lighten(col, 0.35), 0.9);
+        ctx.lineWidth = 0.09;
+        ctx.beginPath();
+        for (let s = 0; s <= 12; s++) {
+          const f = s / 12;
+          const rr = r * (1 - f * 0.85);
+          const a = a0 + f * 2.6;
+          const x = c.x + Math.cos(a) * rr;
+          const y = c.y + Math.sin(a) * rr;
+          if (s === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+      }
+      ctx.strokeStyle = col;
+      ctx.lineWidth = 0.1;
+      ctx.beginPath();
+      ctx.arc(c.x, c.y, r, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+      this.labels.push({ text: q.kind === 'shortcut' ? 'Atajo' : 'Trampa', x: c.x, y: c.y - r - 0.75, color: col, size: 11, bold: true });
+    }
+    if (vis(q.exit, r + 1)) {
+      const c = q.exit;
+      ctx.save();
+      ctx.fillStyle = alpha(col, 0.14 + 0.06 * Math.sin(t * 4));
+      ctx.beginPath();
+      ctx.arc(c.x, c.y, r * 0.85, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = alpha(col, 0.85);
+      ctx.lineWidth = 0.08;
+      ctx.setLineDash([0.3, 0.25]);
+      ctx.lineDashOffset = t * 0.8;
+      ctx.beginPath();
+      ctx.arc(c.x, c.y, r * 0.85, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
   }
 
   /** Tesla coil: a metal electrode orb with crackling arcs filling its (dazing) field. */

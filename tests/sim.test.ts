@@ -562,3 +562,44 @@ describe('stunners switch on and off', () => {
     for (let i = 1; i < at.length; i++) expect(at[i] - at[i - 1]).toBeGreaterThan(1.9); // not while it's off
   });
 });
+
+describe('conveyors and trampolines', () => {
+  function run(map: MapDef, seconds: number): Simulation {
+    const cfg = sampleConfig(1);
+    cfg.race.unstuck = false;
+    const sim = createSimulation(map, sampleRoster(1), cfg);
+    while (!sim.isOver() && sim.time < seconds) sim.step();
+    return sim;
+  }
+
+  it('a conveyor drags a marble along the belt, both ways', () => {
+    for (const speed of [6, -6]) {
+      const map = tiny();
+      map.walls = [floor(10, 'solid', { conveyor: speed })];
+      const sim = run(map, 6);
+      const m = sim.getMarbles()[0];
+      expect(Math.sign(m.x)).toBe(Math.sign(speed)); // moved toward the belt's direction
+      expect(Math.abs(m.x)).toBeGreaterThan(2);
+      sim.destroy();
+    }
+  });
+
+  it('a trampoline throws a landing marble back up, a limited number of times', () => {
+    const map = { ...tiny(), finish: { a: { x: -5, y: 110 }, b: { x: 5, y: 110 }, sensor: [] } };
+    map.walls = [floor(70, 'solid', { trampoline: 9 })];
+    const cfg = sampleConfig(1);
+    cfg.race.unstuck = false;
+    const sim = createSimulation(map, sampleRoster(1), cfg);
+    let throws = 0;
+    let minVy = 0;
+    while (!sim.isOver() && sim.time < 30) {
+      sim.step();
+      for (const e of sim.drainEvents()) if (e.type === 'effect' && e.effect === 'bounce') throws++;
+      minVy = Math.min(minVy, sim.getMarbles()[0].vy);
+    }
+    expect(throws).toBeGreaterThanOrEqual(1);
+    expect(throws).toBeLessThanOrEqual(3);
+    expect(minVy).toBeLessThan(-7); // thrown upward fast
+    sim.destroy();
+  });
+});

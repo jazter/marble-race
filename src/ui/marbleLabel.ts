@@ -15,7 +15,7 @@ export function customOf(p: MarbleProfile): string | null {
   return c && c.trim() ? c : null;
 }
 
-/** Plain-text label: "Ana · Rubí" when named, otherwise "Rubí". */
+/** Plain-text label: "Ana · Rojo" when named, otherwise "Rojo". */
 export function labelText(p: MarbleProfile): string {
   const c = customOf(p);
   return c && c !== p.name ? `${displayName(p)} · ${p.name}` : displayName(p);

@@ -6,31 +6,34 @@ import {
   BH,
   type Ctx,
   type Ramp,
-  type Sweeper,
   addRamp,
   addSwitchObj,
   addWall,
   applyEffect,
   baseSpeed,
-  extend,
   innerHalf,
   makeTrapdoor,
-  maxSweepRadius,
   mechClearance,
   nid,
   pathTo,
   propellerShapes,
+  gearShapes,
   rampSide,
-  rowGap,
   sawShapes,
-  sweeperXs,
   kindEnabled,
   makeFlipper,
   addTeslaCoil,
+  RING_T,
+  TIP_GAP,
+  arcPts,
+  addChain,
+  capEnd,
+  finishSeg,
 } from './util';
 import { Rng } from '../core/rng';
-import { galton, galtonAvailable, lanes, lanesAvailable } from './boards';
+import { galton, galtonAvailable, lanes, lanesAvailable, neckFunnel } from './boards';
 import { gableAvailable, gableSplit, pinball, pinballAvailable } from './pinball';
+import { lift, liftAvailable } from './lift';
 
 export type SegmentType =
   | 'zigzag'
@@ -48,12 +51,11 @@ export type SegmentType =
   | 'galton'
   | 'lanes'
   | 'pinball'
-  | 'gableSplit';
+  | 'gableSplit'
+  | 'gears'
+  | 'trampolines'
+  | 'lift';
 
-const finishSeg = (ctx: Ctx, yEnd: number): void => {
-  extend(ctx, yEnd);
-  pathTo(ctx, ctx.cx, yEnd);
-};
 
 const lerpInt = (ctx: Ctx, lo: number, hi: number): number => clamp(Math.round(lo + ctx.t * (hi - lo) + ctx.rng.range(-0.6, 0.6)), lo, hi);
 
@@ -96,6 +98,19 @@ function zigzagRamps(ctx: Ctx, n: number, flippers = false): Ramp[] {
 
 function zigzag(ctx: Ctx): void {
   const ramps = zigzagRamps(ctx, ctx.rng.int(4, 6), true);
+  // conveyor belts: some ramps drag the marbles (mostly with the flow, sometimes against it)
+  if (ctx.cfg.objects.conveyors !== false) {
+    const crng = new Rng(Math.floor(ctx.rng.next() * 4294967296) ^ 0xc0b7e);
+    for (const rp of ramps) {
+      if (!crng.bool(0.3)) continue;
+      const w = ctx.walls.find((x) => x.id === rp.id);
+      if (!w || w.shape.type !== 'polyline' || w.reaction !== 'solid') continue;
+      const pts = w.shape.points;
+      const downhill = pts[pts.length - 1].y >= pts[0].y ? 1 : -1;
+      const withFlow = crng.bool(0.7);
+      w.conveyor = downhill * (withFlow ? 1 : -1) * crng.range(5, 8);
+    }
+  }
   // Tesla coils: now and then an electrified orb hangs in a ramp's gap column, dazing the
   // marbles that drop through (separate Rng so the course itself doesn't change)
   if (!ctx.cfg.objects.effects.stun || !ctx.cfg.objects.zones) return;
@@ -166,102 +181,6 @@ function pegs(ctx: Ctx): void {
   finishSeg(ctx, y + 1);
 }
 
-/* ------------------------------------------------- propellers / triangles */
-
-function rowsOfSweepers(
-  ctx: Ctx,
-  rows: number,
-  radiusFor: (n: number) => number | null,
-): { rows: Sweeper[][]; ys: number[] } {
-  const c = mechClearance(ctx);
-  const out: Sweeper[][] = [];
-  const ys: number[] = [];
-  let y = ctx.y + 3;
-  for (let i = 0; i < rows; i++) {
-    let n = ctx.rng.bool(0.5) ? 2 : 1;
-    let L = radiusFor(n);
-    if (L === null) {
-      n = 1;
-      L = radiusFor(1);
-    }
-    if (L === null) break;
-    const xs = sweeperXs(ctx, n, L);
-    const row = xs.map((x) => ({ x, L: L as number }));
-    if (out.length === 0) y += row[0].L;
-    else y += Math.max(rowGap(out[out.length - 1], row, c), 2) ;
-    out.push(row);
-    ys.push(y);
-  }
-  ctx.y = y + 0;
-  return { rows: out, ys };
-}
-
-function propellers(ctx: Ctx): void {
-  const rng = ctx.rng;
-  const rows = lerpInt(ctx, 1, 3);
-  const { rows: rs, ys } = rowsOfSweepers(ctx, rows, (n) => {
-    const m = maxSweepRadius(ctx, n);
-    if (m < 1.8 && n > 1) return null;
-    const mm = Math.max(1.2, m);
-    return n === 1 ? Math.min(mm, rng.range(3.6, 5.4)) : mm * rng.range(0.85, 1);
-  });
-  let dir = rng.sign();
-  rs.forEach((row, i) =>
-    row.forEach((sw) => {
-      const blades = rng.int(2, 4);
-      const m: Mechanism = {
-        id: nid(ctx, 'prop'),
-        kind: 'propeller',
-        pivot: { x: sw.x, y: ys[i] },
-        links: [
-          {
-            shapes: propellerShapes(blades, sw.L, 0.4),
-            motion: { type: 'rotate', speed: dir * baseSpeed(ctx), phase: rng.range(0, Math.PI * 2) },
-          },
-        ],
-        effect: null,
-      };
-      applyEffect(ctx, m, { x: sw.L * 0.92, y: 0 });
-      ctx.mechs.push(m);
-      dir = -dir;
-    }),
-  );
-  finishSeg(ctx, ys[ys.length - 1] + rs[rs.length - 1][0].L + 3);
-}
-
-function triangles(ctx: Ctx): void {
-  const rng = ctx.rng;
-  const rows = lerpInt(ctx, 1, 3);
-  const { rows: rs, ys } = rowsOfSweepers(ctx, rows, (n) => {
-    const m = maxSweepRadius(ctx, n);
-    const want = rng.range(1.2, 1.8);
-    return m >= 1.2 ? Math.min(m, want) : n === 1 ? want : null;
-  });
-  let dir = rng.sign();
-  rs.forEach((row, i) =>
-    row.forEach((sw) => {
-      const rho = sw.L;
-      const h = (rho * Math.sqrt(3)) / 2;
-      const m: Mechanism = {
-        id: nid(ctx, 'tri'),
-        kind: 'triangle',
-        pivot: { x: sw.x, y: ys[i] },
-        links: [
-          {
-            shapes: [{ type: 'polygon', points: [{ x: rho, y: 0 }, { x: -rho / 2, y: h }, { x: -rho / 2, y: -h }] }],
-            motion: { type: 'rotate', speed: dir * baseSpeed(ctx), phase: rng.range(0, Math.PI * 2) },
-          },
-        ],
-        effect: null,
-      };
-      applyEffect(ctx, m, { x: rho, y: 0 });
-      ctx.mechs.push(m);
-      dir = -dir;
-    }),
-  );
-  finishSeg(ctx, ys[ys.length - 1] + rs[rs.length - 1][0].L + 3);
-}
-
 /* ------------------------------------------------------------------- arms */
 
 function arms(ctx: Ctx): void {
@@ -327,39 +246,6 @@ function saws(ctx: Ctx): void {
     side = -side;
   }
   finishSeg(ctx, y - 2);
-}
-
-/* ---------------------------------------------------------------- hammers */
-
-function hammers(ctx: Ctx): void {
-  const { rng } = ctx;
-  const c = mechClearance(ctx);
-  const count = lerpInt(ctx, 1, 2);
-  let y = ctx.y + 1.5;
-  for (let i = 0; i < count; i++) {
-    const amp = rng.range(0.6, 1.1);
-    const limit = innerHalf(ctx) - c;
-    const Lh = clamp((limit - 0.7) / Math.sin(amp) - 0.5, 2.5, 8);
-    const m: Mechanism = {
-      id: nid(ctx, 'ham'),
-      kind: 'hammer',
-      pivot: { x: ctx.cx, y },
-      links: [
-        {
-          shapes: [
-            { type: 'box', cx: 0, cy: Lh / 2, hw: 0.12, hh: Lh / 2, angle: 0 },
-            { type: 'box', cx: 0, cy: Lh + 0.2, hw: 0.7, hh: 0.3, angle: 0 },
-          ],
-          motion: { type: 'oscillate', center: 0, amplitude: amp, frequency: rng.range(0.3, 0.7), phase: rng.range(0, Math.PI * 2) },
-        },
-      ],
-      effect: null,
-    };
-    applyEffect(ctx, m, { x: 0, y: Lh + 0.2 });
-    ctx.mechs.push(m);
-    y += Lh + 0.5 + 2.5;
-  }
-  finishSeg(ctx, y + 1);
 }
 
 /* ------------------------------------------------------------------- pads */
@@ -547,34 +433,6 @@ function switchSeg(ctx: Ctx): void {
 
 /* ------------------------------------------------------ regroup segments */
 
-const RING_T = 0.4;
-/** Blade-tip to ring-wall clearance: well below the smallest marble diameter (2·r·minScale). */
-const TIP_GAP = 0.2;
-
-const arcPts = (cx: number, cy: number, rho: number, a0: number, a1: number): Vec[] => {
-  const n = Math.max(2, Math.ceil(Math.abs(a1 - a0) / 9));
-  const out: Vec[] = [];
-  for (let i = 0; i <= n; i++) {
-    const a = (a0 + ((a1 - a0) * i) / n) * DEG;
-    out.push({ x: cx + rho * Math.cos(a), y: cy + rho * Math.sin(a) });
-  }
-  return out;
-};
-
-/** Polyline wall pieces of at most 10 points that share end points. */
-function addChain(ctx: Ctx, pts: Vec[], style: 'ramp' | 'wall'): void {
-  const CH = 10;
-  for (let i = 0; i < pts.length - 1; i += CH - 1) {
-    const piece = pts.slice(i, Math.min(pts.length, i + CH));
-    if (piece.length >= 2) addWall(ctx, { type: 'polyline', thickness: RING_T, points: piece }, style, { reaction: 'solid' });
-  }
-}
-
-/** Free end of a wall: round it so marbles never catch on the square edge. */
-function capEnd(ctx: Ctx, p: Vec): void {
-  addWall(ctx, { type: 'circle', center: p, radius: RING_T / 2 }, 'wall', { reaction: 'solid' });
-}
-
 function regroupSpeed(ctx: Ctx): number {
   // about as lively as the other mechanisms (~1.9 rad/s at the default difficulty; the round chamber
   // turns at 3/4 of it so it still carries marbles round to its exit)
@@ -607,6 +465,8 @@ interface RingOpts {
   rightEnd: number;
   blades: number;
   speed: number;
+  /** Builds the rotor at (cx, cy) with tip radius L instead of the default propeller. */
+  rotor?: (L: number, cx: number, cy: number) => void;
 }
 
 /**
@@ -629,7 +489,8 @@ function rotorRing(ctx: Ctx, o: RingOpts): number {
   capEnd(ctx, left[left.length - 1]);
   capEnd(ctx, right[right.length - 1]);
   const L = rho - RING_T / 2 - TIP_GAP;
-  addRotor(ctx, cx, cy, L, o.blades, o.speed);
+  if (o.rotor) o.rotor(L, cx, cy);
+  else addRotor(ctx, cx, cy, L, o.blades, o.speed);
   pathTo(ctx, cx, top);
   pathTo(ctx, cx, cy);
   return cy;
@@ -675,6 +536,108 @@ function rotorChamber(ctx: Ctx): void {
   finishSeg(ctx, cy + rho + 2.8);
 }
 
+/* ------------------------------------------------------------------ gears */
+
+/**
+ * Engranes: one or two round chambers, each with a toothed gear turning inside it. Marbles drop
+ * into the pockets between the teeth at the top and are carried round to an exit low on one side
+ * (alternating sides), so every marble is moved by the gear. Pockets fit the biggest marble.
+ */
+function gears(ctx: Ctx): void {
+  const { rng } = ctx;
+  const n = rng.bool(0.45 + 0.3 * ctx.t) ? 2 : 1;
+  let side = rng.sign();
+  for (let k = 0; k < n; k++) {
+    gearChamber(ctx, side);
+    side = -side;
+  }
+}
+
+function gearChamber(ctx: Ctx, side: number): void {
+  const { cx, hw, rng } = ctx;
+  // big wheel: a large hub with short teeth reads as a gear, and the pockets still fit a grown marble
+  const rho = clamp(rng.range(4.6, 5.6), 2.4, hw - 0.9);
+  const e = rng.range(34, 40);
+  const gapNear = 100;
+  const gapFar = gapNear + (2 * Math.asin(clamp((ctx.R + 0.5) / rho, 0, 0.95)) * 180) / Math.PI;
+  const leftEnd = side > 0 ? gapFar : 180 - gapNear;
+  const rightEnd = side > 0 ? 360 + gapNear : 360 + (180 - gapFar);
+  const Lr = rho - RING_T / 2 - TIP_GAP;
+  // ~4-6 m/s at the rim whatever the size
+  const speed = side * clamp((4 + 2 * ctx.diff) / Lr, 0.8, 2.2) * rng.range(0.9, 1.1);
+  const phase = rng.range(0, Math.PI * 2);
+  const cy = rotorRing(ctx, {
+    rho,
+    e,
+    slope: rng.range(44, 52),
+    leftEnd,
+    rightEnd,
+    blades: 0,
+    speed,
+    rotor: (L, x, y) => {
+      // pockets between tooth tips at least as wide as the biggest marble + margin
+      // radial room hub..ring = 2R + 0.3 (incl. the tip gap); rim pocket >= 2R + 0.35
+      const toothW = 0.8;
+      const teeth = clamp(Math.floor((2 * Math.PI * L) / (2 * ctx.R + 0.35 + toothW * 0.84)), 4, 14);
+      const hub = Math.max(0.6, L - 2 * ctx.R - 0.1);
+      ctx.mechs.push({
+        id: nid(ctx, 'gear'),
+        kind: 'gear',
+        pivot: { x, y },
+        links: [{ shapes: gearShapes(teeth, L, hub, toothW), motion: { type: 'rotate', speed, phase } }],
+        effect: null,
+      });
+    },
+  });
+  pathTo(ctx, cx - side * rho * 0.3, cy + rho * 0.9);
+  ctx.dropSpots.push({ x: cx - side * rho * 0.35, y: cy + rho + 1.7 });
+  finishSeg(ctx, cy + rho + 2.8);
+}
+
+/* ------------------------------------------------------------ trampolines */
+
+/**
+ * Trampolines: a funnel drops the marbles straight onto a tilted trampoline that throws them
+ * across to a catch ramp on the other side, which rolls them into a second funnel + trampoline
+ * throwing the other way. After a few throws a trampoline is a plain pad they roll off.
+ */
+function trampolines(ctx: Ctx): void {
+  const { rng } = ctx;
+  let side = rng.sign(); // direction of the first throw
+  const g = Math.max(2, ctx.cfg.physics.gravity);
+  for (let k = 0; k < 2; k++) {
+    const { cx, hw } = ctx;
+    const nx = cx - side * 1.2;
+    const O = 2 * ctx.R + 0.8;
+    const neckBottom = neckFunnel(ctx, ctx.y + 0.8, nx, O, Math.tan(38 * DEG), 1.0);
+    // pad under the neck, rising toward -side so it throws up and toward +side
+    const padY = neckBottom + 2.3;
+    const half = 1.45;
+    const tilt = rng.range(20, 28) * DEG;
+    const c = Math.cos(tilt) * half;
+    const s = Math.sin(tilt) * half;
+    const pad = addWall(
+      ctx,
+      { type: 'polyline', thickness: 0.3, points: [{ x: nx - side * c, y: padY - s }, { x: nx + side * c, y: padY + s }] },
+      'ramp',
+      { reaction: 'solid' },
+    );
+    // same arc whatever the gravity
+    pad.trampoline = 7.6 * Math.sqrt(g / 9.8);
+    pathTo(ctx, nx, padY);
+    // catch ramp from the +side wall, sloping down toward -side past the pad
+    const a = { x: cx + side * (hw + 0.15), y: padY + 1.6 };
+    const bx = cx - side * 1.6;
+    const b = { x: bx, y: a.y + Math.abs(a.x - bx) * Math.tan(12 * DEG) };
+    addRamp(ctx, a, b);
+    pathTo(ctx, cx + side * hw * 0.5, a.y + 1);
+    pathTo(ctx, bx, b.y + 0.6);
+    finishSeg(ctx, b.y + 1.2);
+    side = -side;
+  }
+  finishSeg(ctx, ctx.y + 1.5);
+}
+
 /* ---------------------------------------------------------------- library */
 
 export interface SegmentDef {
@@ -694,11 +657,12 @@ export const LIBRARY: SegmentDef[] = [
   { type: 'zigzag', weight: 3, run: zigzag, available: () => true },
   { type: 'funnel', weight: 2, run: funnel, available: () => true },
   { type: 'pegs', weight: 2.5, run: pegs, available: () => true },
-  { type: 'propellers', weight: 2, run: propellers, available: (c) => kindEnabled(c, 'propeller') },
+  // gears replaced the open propeller / triangle / hammer rows, which marbles mostly flew past
+  { type: 'gears', weight: 3.5, run: gears, available: (c) => kindEnabled(c, 'gear') && c.hw >= 3.4 },
+  { type: 'lift', weight: 1.4, run: lift, available: liftAvailable, ownSwitch: true },
+  { type: 'trampolines', weight: 1.6, run: trampolines, available: (c) => c.cfg.objects.trampolines !== false && c.hw >= 4.5 },
   { type: 'arms', weight: 1.5, run: arms, available: (c) => kindEnabled(c, 'arm2') },
   { type: 'saws', weight: 1.5, run: saws, available: (c) => kindEnabled(c, 'saw') },
-  { type: 'triangles', weight: 1.5, run: triangles, available: (c) => kindEnabled(c, 'triangle') },
-  { type: 'hammers', weight: 1.5, run: hammers, available: (c) => kindEnabled(c, 'hammer') },
   {
     type: 'pads',
     weight: 1.2,

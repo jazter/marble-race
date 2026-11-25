@@ -38,6 +38,16 @@ export interface Wall {
   launchDir?: Vec;
   /** Visual hint only: bumper pegs, ramps, etc. */
   style?: 'wall' | 'peg' | 'bumper' | 'ramp' | 'bin';
+  /**
+   * Conveyor belt (polyline walls): surface speed in m/s, positive from points[0] toward the
+   * last point, negative the other way. Marbles touching it are dragged along by friction.
+   */
+  conveyor?: number;
+  /**
+   * Trampoline: a marble landing on it is thrown off along the surface normal (the side it
+   * came from) at this speed (m/s). Each marble gets a few throws per trampoline.
+   */
+  trampoline?: number;
 }
 
 /** Static obstacle that can be removed (opened) during the race. */
@@ -67,7 +77,13 @@ export type LinkMotion =
    * kick stays predictable), holds `hold` s, swings back at `downSpeed` rad/s, and can't
    * fire again until `cooldown` s after it started swinging back.
    */
-  | { type: 'flipper'; rest: number; up: number; upSpeed: number; downSpeed: number; hold: number; cooldown: number };
+  | { type: 'flipper'; rest: number; up: number; upSpeed: number; downSpeed: number; hold: number; cooldown: number }
+  /**
+   * Slide (staircase elevator slats): the link keeps the fixed angle `angle` and its pivot moves
+   * by (dx, dy) * (1 - cos(phase + 2π * frequency * t)) / 2, i.e. back and forth between its
+   * position and position + (dx, dy). Not scaled by objects.speed or switches (keeps the lift reliable).
+   */
+  | { type: 'slide'; angle: number; dx: number; dy: number; frequency: number; phase: number };
 
 export interface MechLink {
   shapes: LocalShape[];
@@ -93,6 +109,13 @@ export interface Mechanism {
   fieldAnchor?: Vec;
   fieldRadius?: number; // metres (attract/repel)
   fieldStrength?: number; // acceleration m/s^2 at the centre (attract/repel)
+  /**
+   * Flippers that work together (e.g. the two flippers of a pinball table) share a group: a marble
+   * can fire the flippers of one group a limited number of times. Absent = its own group.
+   */
+  group?: string;
+  /** Flippers only: times one marble can fire this group (default 3). The staircase lift uses more. */
+  flipLimit?: number;
 }
 
 /* ----------------------------------------------------------------- zones */
@@ -104,6 +127,21 @@ export interface Zone {
   effect: EffectType;
   /** attract/repel acceleration (m/s^2); grow/shrink scale factor per trigger (e.g. 1.25 / 0.8). */
   strength: number;
+}
+
+/* --------------------------------------------------------------- portals */
+
+/**
+ * Portal: a racing marble touching the entrance disc is moved to `exit` (where it drops on).
+ * 'shortcut' exits further down the course, 'trap' sends it back a little. Each marble can use
+ * each portal only once, so nobody loops.
+ */
+export interface Portal {
+  id: string;
+  entrance: Vec;
+  exit: Vec;
+  radius: number;
+  kind: 'shortcut' | 'trap';
 }
 
 /* -------------------------------------------------------------- switches */
@@ -226,6 +264,8 @@ export interface MapDef {
   switches: Switch[];
   /** Optional (older maps have none). */
   monsters?: Monster[];
+  /** Optional (older maps have none). */
+  portals?: Portal[];
   /**
    * Closed polygon along the centre of the outer walls (the course interior). A racing
    * marble whose centre ends up outside it has escaped through a wall and is eliminated.
@@ -259,7 +299,7 @@ export interface MarbleSkin {
 
 export interface MarbleProfile {
   id: number; // 0..count-1, index into spawnPoints
-  name: string; // Spanish display name, e.g. "Rubí", "Plata", "Arcoíris"
+  name: string; // Spanish display name, e.g. "Rojo", "Plata", "Arcoíris"
   skin: MarbleSkin;
   /**
    * Stable identity of this marble's look across races (same key => same skin),

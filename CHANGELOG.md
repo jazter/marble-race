@@ -6,6 +6,43 @@ paréntesis, el commit correspondiente.
 
 ---
 
+## 2026-11-25 — Versión 2: engranes, portales, cintas, trampolines y escalera elevadora
+
+### Añadido
+- **Engranes**: un tramo nuevo con una o dos cámaras redondas, cada una con un engrane de latón
+  (centro grande, dientes cortos) que lleva a las canicas en los huecos entre sus dientes hasta la
+  salida. Los huecos caben una canica agrandada. Opción «Engrane».
+- **Portales**: ~1–2 por mapa, en los huecos por donde caen las canicas. El *Atajo* (azul) manda a
+  la canica más adelante y la *Trampa* (rojo) la regresa un poco. Cada canica puede usar cada
+  portal una sola vez, así nadie se queda dando vueltas. En la vista previa una línea punteada
+  muestra a dónde lleva cada uno. Opción «Portales (atajos y trampas)».
+- **Cintas transportadoras**: ~30 % de las rampas de zigzag son bandas que arrastran a las canicas,
+  casi siempre a favor y a veces en contra. Las franjas amarillas avanzan en la dirección de la
+  cinta. Opción «Cintas transportadoras».
+- **Trampolines**: un tramo con dos trampolines bajo embudos que lanzan a las canicas al otro lado,
+  donde una rampa las recoge. La lona se hunde al recibir una canica, y cada canica recibe hasta 3
+  lanzamientos por trampolín. Opción «Trampolines».
+- **Elevador de escalera**: una escalera con una paleta en cada escalón que lanza las canicas al
+  escalón de arriba hasta salir por un canal al lado. Como mucho uno por mapa. Opción «Elevador de
+  escalera».
+- **Vista previa**: explica cómo explorar el mapa (arrastrar y acercar, con texto distinto en
+  pantallas táctiles), y el botón para seguir ahora dice «▶ Elegir canicas».
+
+### Cambiado
+- **Los engranes reemplazan a las filas de hélices, triángulos y martillos**, que casi no tocaban
+  a las canicas. Siguen existiendo dentro de las trampas del techo a dos aguas y de las mesas de
+  pinball, y las hélices en los puntos de reagrupación.
+- **Paletas de pinball**: el límite de 3 disparos por canica ahora es por mesa (o por paleta suelta)
+  y no para todo el recorrido. Las paletas de más abajo ya no ignoran a las canicas que usaron
+  otras antes.
+- **Semilla al azar en cada mapa nuevo**, también la primera vez que se abre la página. Para
+  repetir un mapa se escribe su semilla en *Mapa → Semilla* (o se elige con el dado) antes de
+  generar.
+- **«Rubí» ahora se llama «Rojo»** («Rojo, Zafiro y Lima», «Cristal Rojo»…). Los nombres que ya
+  pusieron los espectadores se conservan.
+
+---
+
 ## 2026-11-16 — Rendimiento, aturdidores y reagrupaciones
 
 ### Cambiado

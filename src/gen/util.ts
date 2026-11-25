@@ -3,7 +3,7 @@
  * Everything here works in the CANONICAL frame: the course flows toward +y.
  */
 import type { EffectType, GameConfig, MechanismKind, SpecialWallReaction, WallReaction } from '../core/config';
-import { clamp, dist, norm, sub } from '../core/math';
+import { DEG, clamp, dist, norm, sub } from '../core/math';
 import { Rng } from '../core/rng';
 import type { Gate, LocalShape, Mechanism, StaticShape, Switch, Vec, Wall, Zone } from '../core/types';
 
@@ -48,6 +48,11 @@ export interface Ctx {
   /** 'stun' pieces placed so far (capped higher than kills: they don't remove marbles). */
   stuns: number;
   destroys: number;
+  /**
+   * Open spots in the air where marbles drop past (the gap column below each ramp's free end),
+   * canonical frame. Portals are placed on some of them once the course is built.
+   */
+  dropSpots: Vec[];
   /** 0..1 amount of "stuff" per segment. */
   t: number;
   diff: number;
@@ -84,6 +89,7 @@ export function makeCtx(cfg: GameConfig, rng: Rng): Ctx {
     kills: 0,
     stuns: 0,
     destroys: 0,
+    dropSpots: [],
     t: clamp(cfg.objects.density * 0.7 + cfg.map.difficulty * 0.3, 0, 1),
     diff: cfg.map.difficulty,
   };
@@ -219,6 +225,11 @@ export function addRamp(ctx: Ctx, a: Vec, b: Vec, thick = 0.4): Ramp {
   const w = addWall(ctx, { type: 'polyline', points: [a, b], thickness: thick }, 'ramp', { surface: true, dir: down });
   const ramp: Ramp = { id: w.id, a, b, thick };
   ctx.ramps.push(ramp);
+  // the gap column between the free end and the corridor wall: marbles drop through it
+  const free = attach === a ? b : a;
+  const side = free.x >= ctx.cx ? 1 : -1;
+  const wallX = ctx.cx + side * (ctx.hw - BH);
+  if (Math.abs(wallX - free.x) > 1.6) ctx.dropSpots.push({ x: (free.x + wallX) / 2, y: free.y + 1.1 });
   return ramp;
 }
 
@@ -319,6 +330,23 @@ export function sawShapes(radius: number, teeth: number): LocalShape[] {
       type: 'polygon',
       points: [p(a - 0.22, radius * 0.95), p(a + 0.22, radius * 0.95), p(a + 0.12, radius * 1.35)],
     });
+  }
+  return shapes;
+}
+
+/**
+ * Gear: hub disc + `teeth` tapered teeth from the hub out to radius L (local frame, pivot at 0,0).
+ * Pockets between teeth hold marbles while the gear turns.
+ */
+export function gearShapes(teeth: number, L: number, hub: number, toothW: number): LocalShape[] {
+  const shapes: LocalShape[] = [{ type: 'circle', cx: 0, cy: 0, r: hub }];
+  const r0 = hub * 0.85;
+  for (let i = 0; i < teeth; i++) {
+    const a = (i / teeth) * Math.PI * 2;
+    const c = Math.cos(a);
+    const s = Math.sin(a);
+    const pt = (rr: number, w: number): Vec => ({ x: c * rr - s * w, y: s * rr + c * w });
+    shapes.push({ type: 'polygon', points: [pt(r0, -toothW * 0.62), pt(L, -toothW * 0.42), pt(L, toothW * 0.42), pt(r0, toothW * 0.62)] });
   }
   return shapes;
 }
@@ -434,3 +462,41 @@ export function makeFlipper(ctx: Ctx, pivot: Vec, o: FlipperOpts): Mechanism {
 export function addTeslaCoil(ctx: Ctx, center: Vec, radius: number): void {
   ctx.zones.push({ id: nid(ctx, 'tesla'), shape: { type: 'circle', center, radius }, effect: 'stun', strength: 0 });
 }
+
+/* --------------------------------------------- shared wall-building helpers */
+
+export const RING_T = 0.4;
+/** Blade-tip to ring-wall clearance: well below the smallest marble diameter (2·r·minScale). */
+export const TIP_GAP = 0.2;
+
+export const arcPts = (cx: number, cy: number, rho: number, a0: number, a1: number): Vec[] => {
+  const n = Math.max(2, Math.ceil(Math.abs(a1 - a0) / 9));
+  const out: Vec[] = [];
+  for (let i = 0; i <= n; i++) {
+    const a = (a0 + ((a1 - a0) * i) / n) * DEG;
+    out.push({ x: cx + rho * Math.cos(a), y: cy + rho * Math.sin(a) });
+  }
+  return out;
+};
+
+/** Polyline wall pieces of at most 10 points that share end points. */
+export function addChain(ctx: Ctx, pts: Vec[], style: 'ramp' | 'wall'): void {
+  const CH = 10;
+  for (let i = 0; i < pts.length - 1; i += CH - 1) {
+    const piece = pts.slice(i, Math.min(pts.length, i + CH));
+    if (piece.length >= 2) addWall(ctx, { type: 'polyline', thickness: RING_T, points: piece }, style, { reaction: 'solid' });
+  }
+}
+
+/** Free end of a wall: round it so marbles never catch on the square edge. */
+export function capEnd(ctx: Ctx, p: Vec): void {
+  addWall(ctx, { type: 'circle', center: p, radius: RING_T / 2 }, 'wall', { reaction: 'solid' });
+}
+
+/** Close the current segment at yEnd (walls + centre-line). */
+export const finishSeg = (ctx: Ctx, yEnd: number): void => {
+  extend(ctx, yEnd);
+  pathTo(ctx, ctx.cx, yEnd);
+  // just above the segment's end, on the centre-line (funnels, boards, lanes... exit there)
+  ctx.dropSpots.push({ x: ctx.cx, y: yEnd - 1.3 });
+};

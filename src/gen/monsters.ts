@@ -77,6 +77,7 @@ export function mechReach(m: Mechanism): number {
     let e = 0;
     for (const s of l.shapes) e = Math.max(e, ext(s));
     if (l.tip) e = Math.max(e, Math.hypot(l.tip.x, l.tip.y));
+    if (l.motion.type === 'slide') e += Math.hypot(l.motion.dx, l.motion.dy);
     total += e;
   }
   return total;
@@ -463,7 +464,7 @@ export function groupCount(ctx: Ctx, rng: Rng): number {
  */
 export function placeMonsters(ctx: Ctx, rng: Rng, kinds: MonsterKind[], recs: SegRec[], fixed: Monster[], world: World): Monster[] {
   const out: Monster[] = [...fixed];
-  const free = recs.filter((r) => !r.regroup && !r.arena && r.type !== 'start' && r.type !== 'finish' && r.type !== 'pinball' && r.type !== 'gableSplit');
+  const free = recs.filter((r) => !r.regroup && !r.arena && r.type !== 'start' && r.type !== 'finish' && r.type !== 'pinball' && r.type !== 'gableSplit' && r.type !== 'lift');
   // galton / lanes have no free horizontal line (fish) and no room for the others except the merge funnel at their end: a spider may hang there
   const isBoard = (r: SegRec): boolean => r.type === 'galton' || r.type === 'lanes';
   const protectedNext = (r: SegRec): boolean => {

@@ -15,8 +15,15 @@ export function mechanismPoseAt(m: Mechanism, t = 0): MechanismPose {
         ? mo.rest
         : mo.type === "rotate"
           ? mo.phase + mo.speed * t
-          : mo.center +
-            mo.amplitude * Math.sin(mo.phase + Math.PI * 2 * mo.frequency * t);
+          : mo.type === "slide"
+            ? mo.angle
+            : mo.center +
+              mo.amplitude * Math.sin(mo.phase + Math.PI * 2 * mo.frequency * t);
+    if (mo.type === "slide") {
+      const k = (1 - Math.cos(mo.phase + Math.PI * 2 * mo.frequency * t)) / 2;
+      px += mo.dx * k;
+      py += mo.dy * k;
+    }
     angle += rel;
     links.push({ x: px, y: py, angle });
     if (link.tip) {

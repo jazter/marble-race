@@ -39,6 +39,7 @@ export class Hud {
   private chipKey = '';
   /** Which monster kind caught / devoured each marble (for leaderboard labels). */
   private monsterOf = new Map<number, MonsterKind>();
+  private portalToast = new Map<string, number>();
   private devoured = new Set<number>();
 
   constructor(
@@ -235,6 +236,15 @@ export class Hud {
         const verb = e.action === 'grab' ? 'atrapó a' : e.action === 'devour' ? 'devoró a' : 'soltó a';
         text = `${k.article} ${k.name} ${verb} ${this.name(e.marbleId)}`;
         cls = e.action === 'devour' ? 'bad' : e.action === 'release' ? 'good' : 'info';
+        break;
+      }
+      case 'portal': {
+        // one toast per portal every few seconds (a whole pack can go through one)
+        const last = this.portalToast.get(e.portalId) ?? -99;
+        if (e.t - last < 3) return;
+        this.portalToast.set(e.portalId, e.t);
+        text = e.kind === 'shortcut' ? `${this.name(e.marbleId)} tomó un atajo` : `${this.name(e.marbleId)} cayó en una trampa`;
+        cls = e.kind === 'shortcut' ? 'good' : 'bad';
         break;
       }
       case 'raceEnd':

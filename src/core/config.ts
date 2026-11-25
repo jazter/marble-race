@@ -30,7 +30,9 @@ export type MechanismKind =
   | 'saw' // spinning toothed disc
   | 'triangle' // spinning triangle
   | 'hammer' // pendulum-like bar oscillating around 1 pivot
-  | 'flipper'; // pinball flipper: swings up when a marble touches it, throwing it upward
+  | 'flipper' // pinball flipper: swings up when a marble touches it, throwing it upward
+  | 'gear' // toothed wheel turning inside a round chamber: carries marbles in the pockets between its teeth
+  | 'lift'; // staircase elevator: slats that slide up and down alternately, lifting marbles step by step
 
 export type SkinType =
   | 'solid'
@@ -119,6 +121,12 @@ export interface GameConfig {
     speed: number; // multiplier on mechanism angular speeds
     effectChance: number; // 0..1 chance a mechanism carries an effect (otherwise just solid)
     zones: boolean; // allow static modifier pads (zones)
+    /** Portals: entrance + exit pairs (shortcut ahead or trap back), each usable once per marble. Optional: absent = on. */
+    portals?: boolean;
+    /** Conveyor-belt ramps (with or against the flow). Optional: absent = on. */
+    conveyors?: boolean;
+    /** Trampolines that throw marbles across. Optional: absent = on. */
+    trampolines?: boolean;
   };
 
   monsters: {
@@ -234,12 +242,15 @@ export function defaultConfig(): GameConfig {
       stunTime: 1.2,
     },
     objects: {
-      kinds: { propeller: true, arm2: true, saw: true, triangle: true, hammer: true, flipper: true },
+      kinds: { propeller: true, arm2: true, saw: true, triangle: true, hammer: true, flipper: true, gear: true, lift: true },
       effects: { grow: true, shrink: true, destroy: true, attract: true, repel: true, stun: true },
       density: 0.5,
       speed: 1,
       effectChance: 0.6,
       zones: true,
+      portals: true,
+      conveyors: true,
+      trampolines: true,
     },
     monsters: {
       kinds: { spider: true, octopus: true, fish: true, snake: true },

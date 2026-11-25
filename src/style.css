@@ -126,6 +126,8 @@ body:not(.panel-open) #btn-open-panel { display: inline-flex; }
 
 .bar-overlay { position: absolute; left: 0; right: 0; bottom: 0; z-index: 8; display: none; padding: 12px 14px calc(12px + env(safe-area-inset-bottom)); background: linear-gradient(0deg, #0b0e14f0 60%, #0b0e1400); gap: 10px; flex-direction: column; align-items: center; }
 .bar-overlay.show { display: flex; }
+.preview-hint { margin: 0; text-align: center; color: var(--text); font-size: 13.5px; max-width: 640px; }
+.preview-hint b { color: var(--accent); }
 .preview-info { display: flex; flex-wrap: wrap; gap: 6px 16px; justify-content: center; color: var(--muted); font-size: 13px; }
 .preview-info b { color: var(--text); }
 .preview-info .warn { color: var(--accent); }
@@ -214,6 +216,7 @@ body:not(.panel-open) #btn-open-panel { display: inline-flex; }
   .toasts { bottom: auto; top: calc(90px + var(--sat)); left: calc(8px + var(--sal)); max-width: 62%; gap: 3px; }
   /* phones: only the 2 newest toasts, compact, so they don't cover the track */
   .toast { font-size: 11px; padding: 3px 7px; }
+  .preview-hint { font-size: 12.5px; }
   .toasts .toast:nth-last-child(n+3) { display: none; }
   .controls { gap: 4px; padding: 5px 6px; bottom: calc(8px + var(--sab)); }
   .controls .btn { padding: 7px 8px; font-size: 13px; }

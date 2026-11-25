@@ -127,7 +127,7 @@ describe('generator', () => {
   it('never uses disabled kinds, effects or switches', () => {
     for (let seed = 1; seed <= 15; seed++) {
       const c = cfgWith((x) => {
-        x.objects.kinds = { propeller: true, arm2: false, saw: false, triangle: true, hammer: false, flipper: false };
+        x.objects.kinds = { propeller: true, arm2: false, saw: false, triangle: true, hammer: false, flipper: false, gear: false, lift: false };
         x.objects.effects = { grow: true, shrink: false, destroy: false, attract: false, repel: true, stun: false };
         x.objects.effectChance = 1;
         x.switches.enabled = false;
@@ -674,7 +674,7 @@ describe('pinball and gableSplit segments', () => {
   it('respects disabled kinds / reactions in the lanes', () => {
     for (let seed = 1; seed <= 8; seed++) {
       const c = cfg10((x) => {
-        x.objects.kinds = { propeller: false, arm2: false, saw: false, triangle: false, hammer: false, flipper: false };
+        x.objects.kinds = { propeller: false, arm2: false, saw: false, triangle: false, hammer: false, flipper: false, gear: false, lift: false };
         x.walls.special = { bounce: true, slow: false, kill: false, launch: false, stun: false };
         x.objects.zones = false;
       });

@@ -4,6 +4,7 @@
  * Deterministic for (config, seed); only uses the seeded Rng.
  */
 import type { GameConfig, MonsterKind, WallReaction } from '../core/config';
+import { placePortals } from './portals';
 import { DEG, cumulativeLengths, dirFromAngle, rotate } from '../core/math';
 import { Rng } from '../core/rng';
 import type { MapDef, Monster, StaticShape, Vec } from '../core/types';
@@ -124,8 +125,8 @@ const OCTOPUS_CENTRED = new Set(['funnel', 'funnelGate']);
 function octopusFeedOk(type: string, lastGap: number): boolean {
   return OCTOPUS_FEEDERS.has(type) && lastGap === 0;
 }
-const REDIRECTING = new Set(['funnel', 'pegs', 'propellers', 'arms', 'saws', 'triangles', 'hammers', 'funnelGate', 'rotorChamber', 'galton', 'lanes', 'pinball', 'gableSplit']);
-const SPECIAL = new Set(['galton', 'lanes']);
+const REDIRECTING = new Set(['gears', 'funnel', 'pegs', 'propellers', 'arms', 'saws', 'triangles', 'hammers', 'funnelGate', 'rotorChamber', 'galton', 'lanes', 'pinball', 'gableSplit']);
+const SPECIAL = new Set(['galton', 'lanes', 'lift']);
 /** Only placed by the planner (never picked at random). */
 const PLANNED_ONLY = new Set(['pinball', 'gableSplit']);
 
@@ -437,8 +438,9 @@ export function generateMap(config: GameConfig, seed: number): MapDef {
   const finish = buildFinish(ctx);
   const endIdx = ctx.path.length - 1;
   let monstersCanon: Monster[] = [];
+  const world = makeWorld(ctx, ctx.walls, ctx.gates, ctx.mechs, ctx.switches);
+  const portalsCanon = placePortals(ctx, seed, world, finishY0);
   if (monsterKinds.length > 0) {
-    const world = makeWorld(ctx, ctx.walls, ctx.gates, ctx.mechs, ctx.switches);
     monstersCanon = placeMonsters(ctx, mrng, monsterKinds, segRecs, fixedMonsters, world)
       .sort((a, b) => monsterY(a) - monsterY(b))
       .map((m, k) => ({ ...m, id: `m${k + 1}` }));
@@ -461,7 +463,7 @@ export function generateMap(config: GameConfig, seed: number): MapDef {
   }
   if (config.walls.boundary === 'mixed') {
     const protect: Range[] = [[-Infinity, 2], [finishY0, Infinity]];
-    for (const rec of segRecs) if (rec.regroup || rec.type === 'galton' || rec.type === 'lanes' || rec.type === 'pinball' || rec.type === 'gableSplit') protect.push([rec.y0, rec.y1]);
+    for (const rec of segRecs) if (rec.regroup || rec.type === 'galton' || rec.type === 'lanes' || rec.type === 'pinball' || rec.type === 'gableSplit' || rec.type === 'lift') protect.push([rec.y0, rec.y1]);
     emitMixed(ctx, chain, protect, new Rng((seed ^ 0x6d697864) >>> 0));
   } else emitBoundary(ctx, chain, killRanges);
 
@@ -495,7 +497,12 @@ export function generateMap(config: GameConfig, seed: number): MapDef {
           ? { ...mo, phase: mo.phase + phi }
           : mo.type === 'oscillate'
             ? { ...mo, center: mo.center + phi }
-            : { ...mo, rest: mo.rest + phi, up: mo.up + phi };
+            : mo.type === 'slide'
+              ? (() => {
+                  const d = rotate({ x: mo.dx, y: mo.dy }, phi);
+                  return { ...mo, angle: mo.angle + phi, dx: d.x, dy: d.y };
+                })()
+              : { ...mo, rest: mo.rest + phi, up: mo.up + phi };
       return { ...l, motion };
     });
     return { ...m, pivot: rp(m.pivot), links };
@@ -517,6 +524,7 @@ export function generateMap(config: GameConfig, seed: number): MapDef {
         return { ...m, passes: m.passes.map((q) => ({ a: rp(q.a), b: rp(q.b) })) };
     }
   });
+  const portals = portalsCanon.map((q) => ({ ...q, entrance: rp(q.entrance), exit: rp(q.exit) }));
   const spawnPoints = start.spawn.map(rp);
   const path = ctx.path.map(rp);
 
@@ -535,6 +543,7 @@ export function generateMap(config: GameConfig, seed: number): MapDef {
     else all.push(...z.shape.points);
   }
   for (const s of switches) all.push(s.position);
+  for (const q of portals) all.push(q.entrance, q.exit);
   const margin = 15;
   const bounds = {
     minX: Math.min(...all.map((p) => p.x)) - margin,
@@ -554,6 +563,7 @@ export function generateMap(config: GameConfig, seed: number): MapDef {
     zones,
     switches,
     ...(monsters.length ? { monsters } : {}),
+    ...(portals.length ? { portals } : {}),
     outline: chain.map(rp),
     start: { spawnPoints, area: start.area.map(rp) },
     finish: { a: rp(finish.a), b: rp(finish.b), sensor: finish.sensor.map(rp) },

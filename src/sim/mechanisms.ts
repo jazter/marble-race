@@ -81,6 +81,7 @@ export function advanceState(rt: MechRuntime, mult: number, dt: number): void {
     const m = links[i].motion;
     if (m.type === 'flipper') advanceFlipper(rt, i, m, dt);
     else if (m.type === 'rotate') rt.state[i] += m.speed * mult * dt;
+    else if (m.type === 'slide') rt.state[i] += 2 * Math.PI * m.frequency * dt;
     else rt.state[i] += 2 * Math.PI * m.frequency * mult * dt;
   }
 }
@@ -93,7 +94,13 @@ export function computePoses(rt: MechRuntime): void {
   let wa = 0;
   for (let i = 0; i < links.length; i++) {
     const m = links[i].motion;
-    const rel = m.type === 'rotate' || m.type === 'flipper' ? rt.state[i] : m.center + m.amplitude * Math.sin(rt.state[i]);
+    const rel =
+      m.type === 'rotate' || m.type === 'flipper' ? rt.state[i] : m.type === 'slide' ? m.angle : m.center + m.amplitude * Math.sin(rt.state[i]);
+    if (m.type === 'slide') {
+      const k = (1 - Math.cos(rt.state[i])) / 2;
+      px += m.dx * k;
+      py += m.dy * k;
+    }
     wa += rel;
     const pose = rt.poses[i];
     pose.x = px;
