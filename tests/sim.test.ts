@@ -603,3 +603,36 @@ describe('conveyors and trampolines', () => {
     sim.destroy();
   });
 });
+
+describe('portals', () => {
+  it('a marble spirals into the entrance, is gone a moment and comes out of the exit, once', () => {
+    const map = { ...tiny(), finish: { a: { x: -5, y: 110 }, b: { x: 5, y: 110 }, sensor: [] } };
+    // a floor that sends the marble back over the entrance would be needed for a second visit:
+    // instead check single use by letting it fall through the entrance zone twice (exit above it)
+    map.walls = [floor(80)];
+    map.portals = [{ id: 'p1', entrance: { x: 0, y: 60 }, exit: { x: 0, y: 35 }, radius: 0.9, kind: 'trap' }];
+    const cfg = sampleConfig(1);
+    cfg.race.unstuck = false;
+    const sim = createSimulation(map, sampleRoster(1), cfg);
+    const ev: SimEvent[] = [];
+    let sawIn = false;
+    let sawGone = false;
+    let sawOut = false;
+    while (!sim.isOver() && sim.time < 20) {
+      sim.step();
+      for (const e of sim.drainEvents()) if (e.type === 'portal') ev.push(e);
+      const p = sim.getMarbles()[0].portal;
+      if (p?.phase === 'in') sawIn = true;
+      if (p?.phase === 'gone') sawGone = true;
+      if (p?.phase === 'out') sawOut = true;
+    }
+    const enters = ev.filter((e) => e.type === 'portal' && e.stage === 'enter');
+    const exits = ev.filter((e) => e.type === 'portal' && e.stage === 'exit');
+    expect(enters).toHaveLength(1); // fell through the entrance again after the exit: not used twice
+    expect(exits).toHaveLength(1);
+    expect(sawIn && sawGone && sawOut).toBe(true);
+    expect(exits[0].t - enters[0].t).toBeGreaterThan(0.9); // a visible trip, not a jump
+    expect(sim.getMarbles()[0].y).toBeGreaterThan(70); // ended up on the floor below
+    sim.destroy();
+  });
+});

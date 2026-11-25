@@ -66,7 +66,7 @@ abstract class Base<M extends Monster> {
   }
 
   protected catchable(m: MarbleState): boolean {
-    if (m.status !== 'racing' || m.heldBy !== undefined) return false;
+    if (m.status !== 'racing' || m.heldBy !== undefined || m.portal !== undefined) return false;
     if ((this.grabCount[m.id] ?? 0) >= MAX_GRABS_SAME_MARBLE) return false;
     const sh = (this.sh ??= SHARED.get(this.h));
     if (!sh) return true;

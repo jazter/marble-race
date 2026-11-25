@@ -75,7 +75,7 @@ Todas las opciones están en el panel lateral (⚙ en móvil). *Restablecer valo
 | Densidad / velocidad | 50 % / 1× |
 | Probabilidad de efecto | 60 % |
 | Zonas con efecto | Activas |
-| Portales | Activos: ~1–2 por mapa en huecos por donde caen las canicas. *Atajo* (azul) te manda más adelante; *Trampa* (rojo) te regresa un poco. Cada canica puede usar cada portal una sola vez |
+| Portales | Activos: ~1–2 por mapa en huecos por donde caen las canicas. *Atajo* (azul) te manda más adelante; *Trampa* (rojo) te regresa un poco. La entrada parpadea; la canica entra girando y encogiéndose, desaparece un momento y sale de la salida (una espiral oscura y tenue, como un mini agujero negro) en ~1,7 s. Cada canica puede usar cada portal una sola vez |
 | Cintas transportadoras | Activas: ~30 % de las rampas de zigzag arrastran a las canicas, casi siempre a favor (más rápido) y a veces en contra |
 | Trampolines | Activos: tramo con dos trampolines bajo embudos que lanzan las canicas al otro lado; cada canica recibe hasta 3 lanzamientos por trampolín |
 

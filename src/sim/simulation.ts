@@ -48,6 +48,10 @@ import { PathProgress } from './progress';
 import { combinePhysics, type SwitchRuntime, SWITCH_REST } from './switches';
 
 /** Each marble can trigger flippers at most this many times per race. */
+/** Portal trip: seconds spiralling in, gone, and spiralling out. */
+const PORTAL_IN = 0.7;
+const PORTAL_GONE = 0.35;
+const PORTAL_OUT = 0.6;
 /** Throws per marble per trampoline (then it is a plain pad), and the minimum time between two. */
 const TRAMPOLINE_THROWS = 3;
 const TRAMPOLINE_COOLDOWN = 0.3;
@@ -108,6 +112,8 @@ class SimImpl implements Simulation {
   private trampolineUses = new Map<number, number[]>();
   /** Marble ids that already went through each portal. */
   private portalUsed: Set<number>[] = [];
+  /** Marbles travelling through a portal right now. */
+  private transit = new Map<number, { i: number; elapsed: number; dx: number; dy: number }>();
   private slowCount: number[] = [];
   /** Per flipper group: times each marble has fired it (capped by MAX_FLIPS_PER_MARBLE). */
   private flipCount = new Map<string, number[]>();
@@ -274,22 +280,97 @@ class SimImpl implements Simulation {
     this.emit({ t: this.time, type: 'effect', marbleId: m.id, effect: 'bounce', x: m.x, y: m.y });
   }
 
-  /** Move a marble through portal i (once per marble per portal); it keeps a gentle speed along the flow. */
+  /** Held by a monster or travelling through a portal: out of the physics world for now. */
+  private frozen(m: MarbleState): boolean {
+    return m.heldBy !== undefined || m.portal !== undefined;
+  }
+
+  /**
+   * Portal i swallows the marble (once per marble per portal): it leaves the physics world,
+   * spirals into the entrance (PORTAL_IN s), is gone a moment (PORTAL_GONE s) and spirals out of
+   * the exit (PORTAL_OUT s) before rolling on. Driven step by step in processPortals.
+   */
   private enterPortal(m: MarbleState, i: number): void {
     const q = this.map.portals?.[i];
     const used = this.portalUsed[i];
     const body = this.bodies[m.id];
     if (!q || !used || used.has(m.id) || !body) return;
     used.add(m.id);
-    const v = body.getLinearVelocity();
-    const sp = Math.min(Math.hypot(v.x, v.y), 3);
+    body.setLinearVelocity(new Vec2(0, 0));
+    body.setAngularVelocity(0);
+    body.setActive(false);
+    this.transit.set(m.id, { i, elapsed: 0, dx: m.x - q.entrance.x, dy: m.y - q.entrance.y });
+    m.portal = { phase: 'in', t: 0, kind: q.kind };
+    m.vx = 0;
+    m.vy = 0;
+    this.emit({ t: this.time, type: 'portal', stage: 'enter', marbleId: m.id, portalId: q.id, kind: q.kind, x: q.entrance.x, y: q.entrance.y, toX: q.exit.x, toY: q.exit.y });
+  }
+
+  private processPortals(): void {
+    if (this.transit.size === 0) return;
+    const dt = SIM_DT;
+    for (const [id, tr] of this.transit) {
+      const m = this.marbles[id];
+      const q = this.map.portals?.[tr.i];
+      const st = m.portal;
+      if (!q || !st || m.status !== 'racing') {
+        this.transit.delete(id);
+        m.portal = undefined;
+        continue;
+      }
+      tr.elapsed += dt;
+      m.angle += 9 * dt; // it spins as it goes
+      if (st.phase === 'in') {
+        st.t = Math.min(1, tr.elapsed / PORTAL_IN);
+        const e = st.t * st.t; // accelerates toward the centre
+        const a = 3.5 * Math.PI * st.t;
+        const k = 1 - e;
+        const c = Math.cos(a);
+        const s = Math.sin(a);
+        m.x = q.entrance.x + (tr.dx * c - tr.dy * s) * k;
+        m.y = q.entrance.y + (tr.dx * s + tr.dy * c) * k;
+        if (st.t >= 1) {
+          st.phase = 'gone';
+          st.t = 0;
+          tr.elapsed = 0;
+          m.x = q.exit.x; // already counted at the exit (camera, progress after it comes out)
+          m.y = q.exit.y;
+        }
+      } else if (st.phase === 'gone') {
+        st.t = Math.min(1, tr.elapsed / PORTAL_GONE);
+        if (st.t >= 1) {
+          st.phase = 'out';
+          st.t = 0;
+          tr.elapsed = 0;
+          this.emit({ t: this.time, type: 'portal', stage: 'exit', marbleId: m.id, portalId: q.id, kind: q.kind, x: q.exit.x, y: q.exit.y, toX: q.exit.x, toY: q.exit.y });
+        }
+      } else {
+        st.t = Math.min(1, tr.elapsed / PORTAL_OUT);
+        const e = 1 - (1 - st.t) * (1 - st.t); // decelerates away from the centre
+        const a = -3 * Math.PI * (1 - st.t);
+        const f = this.map.flowDir;
+        const rr = 0.35 * e;
+        m.x = q.exit.x + (f.x * Math.cos(a) - f.y * Math.sin(a)) * rr;
+        m.y = q.exit.y + (f.x * Math.sin(a) + f.y * Math.cos(a)) * rr;
+        if (st.t >= 1) this.leavePortal(m);
+      }
+    }
+  }
+
+  private leavePortal(m: MarbleState): void {
+    this.transit.delete(m.id);
+    m.portal = undefined;
+    const body = this.bodies[m.id];
+    if (!body) return;
     const f = this.map.flowDir;
-    body.setTransform(new Vec2(q.exit.x, q.exit.y), body.getAngle());
-    body.setLinearVelocity(new Vec2(f.x * sp, f.y * sp));
+    body.setTransform(new Vec2(m.x, m.y), m.angle);
+    body.setActive(true);
+    body.setLinearVelocity(new Vec2(f.x * 2, f.y * 2));
     body.setAwake(true);
-    this.emit({ t: this.time, type: 'portal', marbleId: m.id, portalId: q.id, kind: q.kind, x: m.x, y: m.y, toX: q.exit.x, toY: q.exit.y });
-    m.x = q.exit.x;
-    m.y = q.exit.y;
+    m.vx = f.x * 2;
+    m.vy = f.y * 2;
+    this.prevX[m.id] = m.x;
+    this.prevY[m.id] = m.y;
     this.hist[m.id].length = 0; // unstuck: a fresh start at the exit
     this.segHint[m.id] = -1; // progress: search the whole path again
   }
@@ -675,7 +756,7 @@ class SimImpl implements Simulation {
     const wind = phys.wind;
     const slowMul = Math.pow(1 - cfg.walls.slowFactor, dt);
     for (const m of this.marbles) {
-      if (m.status !== 'racing' || m.heldBy !== undefined) continue;
+      if (m.status !== 'racing' || this.frozen(m)) continue;
       const body = this.bodies[m.id]!;
       let ax = wind.x;
       let ay = wind.y;
@@ -723,6 +804,7 @@ class SimImpl implements Simulation {
 
     this.syncMarbles();
     this.processContacts();
+    this.processPortals();
     this.processStunZones();
     this.processStun();
     this.updateSwitchTimers();
@@ -745,7 +827,7 @@ class SimImpl implements Simulation {
   private syncMarbles(): void {
     for (const m of this.marbles) {
       const b = this.bodies[m.id];
-      if (!b || m.heldBy !== undefined) continue;
+      if (!b || this.frozen(m)) continue;
       const p = b.getPosition();
       const v = b.getLinearVelocity();
       m.x = p.x;
@@ -787,7 +869,7 @@ class SimImpl implements Simulation {
         const tag = (fa.getBody() === other ? fa : c.getFixtureB()).getUserData() as FixTag;
         if (tag.k !== K_MARBLE) continue;
         const m = this.marbles[tag.i];
-        if (m && m.status === 'racing' && m.heldBy === undefined && (counts[m.id] ?? 0) < limit) touching.push(m.id);
+        if (m && m.status === 'racing' && !this.frozen(m) && (counts[m.id] ?? 0) < limit) touching.push(m.id);
       }
       rt.touch[i] = touching.length > 0;
       if (ready && touching.length) for (const id of touching) counts[id] = (counts[id] ?? 0) + 1;
@@ -812,7 +894,7 @@ class SimImpl implements Simulation {
           } else if (this.slowCount[m.id] > 0) this.slowCount[m.id]--;
           continue;
         }
-        if (!r.begin || m.status !== 'racing' || m.heldBy !== undefined) continue;
+        if (!r.begin || m.status !== 'racing' || this.frozen(m)) continue;
         if (this.trampoline[r.idx] !== undefined) {
           this.throwFromTrampoline(m, r);
           continue;
@@ -850,7 +932,7 @@ class SimImpl implements Simulation {
         if (!set) this.stunZoneInside.set(r.idx, (set = new Set()));
         if (r.begin) set.add(m.id);
         else set.delete(m.id);
-      } else if (r.begin && m.status === 'racing' && m.heldBy === undefined) {
+      } else if (r.begin && m.status === 'racing' && !this.frozen(m)) {
         if (r.kind === K_MECH) {
           this.applyObjectEffect(m, this.mechs[r.idx].def.effect, null, this.keyOfMech[r.idx], this.mechs[r.idx].def.id);
         } else if (r.kind === K_ZONE) {
@@ -889,7 +971,7 @@ class SimImpl implements Simulation {
     const ab2 = abx * abx + aby * aby;
     const cand: { m: MarbleState; f: number }[] = [];
     for (const m of this.marbles) {
-      if (m.status !== 'racing' || m.heldBy !== undefined) continue;
+      if (m.status !== 'racing' || this.frozen(m)) continue;
       const s0 = cross({ x: abx, y: aby }, { x: this.prevX[m.id] - a.x, y: this.prevY[m.id] - a.y });
       const s1 = cross({ x: abx, y: aby }, { x: m.x - a.x, y: m.y - a.y });
       let hit = false;
@@ -929,7 +1011,7 @@ class SimImpl implements Simulation {
     const outline = this.map.outline && this.map.outline.length >= 3 ? this.map.outline : null;
     const checkOutline = outline !== null && this.stepCount % 4 === 0;
     for (const m of this.marbles) {
-      if (m.status !== 'racing' || m.heldBy !== undefined) continue;
+      if (m.status !== 'racing' || this.frozen(m)) continue;
       if (m.x < bd.minX || m.x > bd.maxX || m.y < bd.minY || m.y > bd.maxY || (checkOutline && !pointInPolygon(m, outline))) {
         // escaped through a wall (or left the map): never let it keep racing outside the course
         this.eliminate(m, 'outOfBounds');
@@ -946,7 +1028,7 @@ class SimImpl implements Simulation {
     const hh = c.height / 2;
     const { offscreenKill, offscreenGrace } = this.config.camera;
     for (const m of this.marbles) {
-      if (m.status !== 'racing' || m.heldBy !== undefined) continue;
+      if (m.status !== 'racing' || this.frozen(m)) continue;
       const outside = Math.abs(m.x - c.x) > hw + m.radius || Math.abs(m.y - c.y) > hh + m.radius;
       if (outside) m.offscreenTime += SIM_DT;
       else m.offscreenTime = 0;
@@ -980,7 +1062,7 @@ class SimImpl implements Simulation {
       if (set.size === 0 || !stunnerOn(zone.id, this.time)) continue;
       for (const id of set) {
         const m = this.marbles[id];
-        if (!m || m.status !== 'racing' || m.heldBy !== undefined) continue;
+        if (!m || m.status !== 'racing' || this.frozen(m)) continue;
         if (zone.shape.type === 'circle') {
           // guard against a stale membership (fixture rebuilt by grow/shrink)
           const c = zone.shape.center;
@@ -1022,7 +1104,7 @@ class SimImpl implements Simulation {
     const uy = -flow.y / fl;
     for (const m of this.marbles) {
       if (m.status !== 'racing') continue;
-      if (m.heldBy !== undefined) {
+      if (this.frozen(m)) {
         this.hist[m.id].length = 0;
         continue;
       }

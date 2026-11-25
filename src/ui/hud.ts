@@ -239,6 +239,7 @@ export class Hud {
         break;
       }
       case 'portal': {
+        if (e.stage !== 'enter') return;
         // one toast per portal every few seconds (a whole pack can go through one)
         const last = this.portalToast.get(e.portalId) ?? -99;
         if (e.t - last < 3) return;

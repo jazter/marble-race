@@ -43,6 +43,11 @@ export interface MarbleState {
   heldBy?: string;
   /** Seconds left of being dazed by a 'stun' wall (absent / 0 when not stunned). */
   stunned?: number;
+  /**
+   * Going through a portal: 'in' = spiralling into the entrance, 'gone' = between the two ends,
+   * 'out' = spiralling out of the exit. `t` runs 0..1 within each phase. Absent otherwise.
+   */
+  portal?: { phase: 'in' | 'gone' | 'out'; t: number; kind: 'shortcut' | 'trap' };
 }
 
 export interface LinkPose {
@@ -151,6 +156,8 @@ export type SimEvent =
   | {
       t: number;
       type: 'portal';
+      /** 'enter': swallowed by the entrance; 'exit': comes out of the exit. */
+      stage: 'enter' | 'exit';
       marbleId: number;
       portalId: string;
       kind: 'shortcut' | 'trap';

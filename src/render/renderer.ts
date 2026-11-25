@@ -470,10 +470,13 @@ export class Renderer {
         }
         case 'portal': {
           const col = PORTAL_COLORS[e.kind];
-          this.particles.ring(e.x, e.y, col, 1.4, 0.4);
-          this.particles.burst(e.x, e.y, col, 8, 3, { gravity: 0, drag: 3 });
-          this.particles.ring(e.toX, e.toY, col, 1.6, 0.5);
-          this.particles.burst(e.toX, e.toY, col, 14, 6, { gravity: 0 });
+          if (e.stage === 'enter') {
+            this.particles.ring(e.x, e.y, col, 1.4, 0.6);
+            this.particles.burst(e.x, e.y, col, 8, 2, { gravity: 0, drag: 3 });
+          } else {
+            this.particles.ring(e.x, e.y, col, 1.0, 0.5);
+            this.particles.burst(e.x, e.y, col, 10, 4, { gravity: 0, drag: 2 });
+          }
           break;
         }
         case 'gateOpen': {
@@ -1454,9 +1457,14 @@ export class Renderer {
       ctx.restore();
     }
     const r = q.radius;
+    // blinking: each portal pulses with its own phase, with a short bright flash at the peak
+    const ph = (q.id.charCodeAt(q.id.length - 1) % 7) * 0.9;
+    const wave = 0.5 + 0.5 * Math.sin(t * 6.5 + ph);
+    const blink = 0.35 + 0.65 * wave * wave * wave;
     if (vis(q.entrance, r + 1)) {
       const c = q.entrance;
       ctx.save();
+      ctx.globalAlpha = blink;
       if (this.lite) ctx.fillStyle = alpha(col, 0.3);
       else {
         const g = ctx.createRadialGradient(c.x, c.y, 0, c.x, c.y, r * 1.15);
@@ -1495,19 +1503,39 @@ export class Renderer {
       this.labels.push({ text: q.kind === 'shortcut' ? 'Atajo' : 'Trampa', x: c.x, y: c.y - r - 0.75, color: col, size: 11, bold: true });
     }
     if (vis(q.exit, r + 1)) {
+      // the exit: a small, faint dark spiral (a mini black hole), blinking softly
       const c = q.exit;
+      const rr = r * 0.55;
       ctx.save();
-      ctx.fillStyle = alpha(col, 0.14 + 0.06 * Math.sin(t * 4));
+      ctx.globalAlpha = 0.25 + 0.35 * blink;
+      if (this.lite) ctx.fillStyle = 'rgba(0,0,0,0.6)';
+      else {
+        const g = ctx.createRadialGradient(c.x, c.y, 0, c.x, c.y, rr);
+        g.addColorStop(0, 'rgba(0,0,0,0.9)');
+        g.addColorStop(0.55, 'rgba(4,4,10,0.55)');
+        g.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = g;
+      }
       ctx.beginPath();
-      ctx.arc(c.x, c.y, r * 0.85, 0, Math.PI * 2);
+      ctx.arc(c.x, c.y, rr, 0, Math.PI * 2);
       ctx.fill();
-      ctx.strokeStyle = alpha(col, 0.85);
-      ctx.lineWidth = 0.08;
-      ctx.setLineDash([0.3, 0.25]);
-      ctx.lineDashOffset = t * 0.8;
-      ctx.beginPath();
-      ctx.arc(c.x, c.y, r * 0.85, 0, Math.PI * 2);
-      ctx.stroke();
+      ctx.lineCap = 'round';
+      ctx.strokeStyle = alpha(col, 0.55);
+      ctx.lineWidth = 0.05;
+      for (let k = 0; k < 2; k++) {
+        const a0 = -t * 4 + k * Math.PI;
+        ctx.beginPath();
+        for (let s = 0; s <= 10; s++) {
+          const f = s / 10;
+          const ra = rr * (1 - f * 0.8);
+          const a = a0 + f * 3.2;
+          const x = c.x + Math.cos(a) * ra;
+          const y = c.y + Math.sin(a) * ra;
+          if (s === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+      }
       ctx.restore();
     }
   }
@@ -1648,6 +1676,13 @@ export class Renderer {
       const sy = m.y * s + ty;
       const rPx = m.radius * s;
       if (sx < -rPx * 2 || sy < -rPx * 2 || sx > this.W + rPx * 2 || sy > this.H + rPx * 2) continue;
+      if (m.portal) {
+        // swallowed by / coming out of a portal: shrink to nothing, then grow back
+        if (m.portal.phase === 'gone') continue;
+        const k = m.portal.phase === 'in' ? 1 - 0.9 * m.portal.t * m.portal.t : 0.1 + 0.9 * (1 - (1 - m.portal.t) * (1 - m.portal.t));
+        if (rPx * k >= 1) drawMarbleSprite(ctx, m.profile.skin, sx, sy, rPx * k, m.angle);
+        continue;
+      }
       if (rPx < 1.6) {
         ctx.fillStyle = skinColor(m.profile.skin);
         ctx.fillRect(sx - 1, sy - 1, 2, 2);
@@ -1759,7 +1794,7 @@ export class Renderer {
   private drawNameTags(view: View, marbles: readonly MarbleState[]): void {
     const ctx = this.ctx;
     const dpr = this.dpr;
-    const live = marbles.filter((m) => m.status === 'racing' || m.status === 'finished' || m.status === 'waiting');
+    const live = marbles.filter((m) => (m.status === 'racing' && m.portal?.phase !== 'gone') || m.status === 'finished' || m.status === 'waiting');
     const rankOf = (m: MarbleState) => (m.status === 'finished' ? m.rank ?? 99 : 1000 - m.progress);
     live.sort((a, b) => {
       const fa = a.status === 'finished' ? 0 : 1;

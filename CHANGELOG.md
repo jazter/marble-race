@@ -6,6 +6,18 @@ paréntesis, el commit correspondiente.
 
 ---
 
+## 2026-11-25 — Portales más vistosos
+
+### Cambiado
+- **El paso por un portal ya no es instantáneo**: la canica es absorbida girando y encogiéndose
+  hacia el centro de la entrada (0,7 s), desaparece un momento (0,35 s) y sale de la salida en
+  espiral, creciendo (0,6 s). Mientras viaja no choca con nada y ningún monstruo puede atraparla.
+- **Los portales parpadean**, cada uno a su ritmo.
+- **La salida es una espiral oscura, pequeña y tenue** (un mini agujero negro) en vez de un
+  círculo de color.
+
+---
+
 ## 2026-11-25 — Versión 2: engranes, portales, cintas, trampolines y escalera elevadora
 
 ### Añadido
